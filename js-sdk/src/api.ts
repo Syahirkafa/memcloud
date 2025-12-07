@@ -40,7 +40,7 @@ export class MemCloud {
         throw new Error("Unknown response: " + JSON.stringify(resp));
     }
 
-    async storeStream(stream: Readable, options?: { chunkSize?: number }): Promise<Handle> {
+    async storeStream(stream: Readable, options?: { chunkSize?: number, target?: string }): Promise<Handle> {
         // 1. Start Stream
         console.log("Starting stream upload...");
         // size_hint is optional, we pass null/undefined
@@ -75,7 +75,7 @@ export class MemCloud {
 
         // 3. Finish
         console.log("Finishing stream...");
-        const finishResp = await this.socket.request({ cmd: 'StreamFinish', stream_id: streamId });
+        const finishResp = await this.socket.request({ cmd: 'StreamFinish', stream_id: streamId, target: options?.target });
 
         if (finishResp.res === 'Stored') {
             console.log(`Stored Stream -> Block ID: ${finishResp.id}`);
