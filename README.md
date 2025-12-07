@@ -89,7 +89,7 @@ This will download the latest binary for your architecture and install it to `/u
 
 ### Build from Source
 ```bash
-git clone https://github.com/vibhanshugarg/memcloud.git
+git clone https://github.com/vibhanshu2001/memcloud.git
 cd memcloud
 cargo build --release
 ```
