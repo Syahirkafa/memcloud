@@ -105,10 +105,29 @@ async function main() {
 main();
 ```
 
-## Structure
-- `memnode/`: Rust Daemon (RPC, TCP, Storage Engine).
+## 🏗️ Architecture
+```mermaid
+graph TD
+    subgraph Local_Machine [Local Machine]
+        CLI[MemCLI] -->|Unix Socket| Node[MemNode Daemon]
+        SDK[JS SDK] -->|Unix Socket| Node
+        Node -->|In-Memory| Storage[(RAM Storage)]
+    end
+
+    subgraph LAN_Network [LAN Network]
+        Node -->|mDNS Broadcast| Discovery[Service Discovery]
+        Discovery -->|Found| Peer[Remote Peer Node]
+        Node <-->|TCP / JSON-RPC| Peer
+    end
+
+    style Local_Machine fill:#f9f,stroke:#333,stroke-width:2px,color:black
+    style LAN_Network fill:#dfd,stroke:#333,stroke-width:2px,color:black
+    style Node fill:#bbf,stroke:#333,stroke-width:2px,color:black
+    style Storage fill:#ff9,stroke:#333,stroke-width:2px,color:black
+```
+1.  **MemNode**: The core daemon running on each machine. It handles storage, networking, and discovery.
 - `memsdk/`: Rust & C SDK Library.
-- `memcli/`: Command-line interface.
+- `memcli/`: The command-line client.
 - `js-sdk/`: TypeScript SDK.
 - `installers/`: Systemd/Launchd scripts.
 
