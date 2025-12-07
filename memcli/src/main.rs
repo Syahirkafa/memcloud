@@ -6,6 +6,7 @@ use std::process::{Command, Stdio};
 use std::path::PathBuf;
 use nix::sys::signal::{self, Signal};
 use nix::unistd::Pid;
+use std::io::{self, Write};
 
 fn get_memcloud_dir() -> PathBuf {
     let home = dirs::home_dir().expect("Could not find home directory");
@@ -103,8 +104,8 @@ enum NodeAction {
     /// Start the MemCloud node daemon in background
     Start {
         /// Name for this node (visible to peers)
-        #[arg(long, short, default_value = "MyNode")]
-        name: String,
+        #[arg(long, short)]
+        name: Option<String>,
         /// Port for peer-to-peer communication
         #[arg(long, short, default_value_t = 8080)]
         port: u16,
@@ -178,6 +179,23 @@ fn handle_node_action(action: NodeAction) -> anyhow::Result<()> {
                     return Ok(());
                 }
             }
+            
+            // Resolve name
+            let final_name = match name {
+                Some(n) => n,
+                None => {
+                    print!("Enter node name [MyNode]: ");
+                    io::stdout().flush()?;
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input)?;
+                    let trimmed = input.trim();
+                    if trimmed.is_empty() {
+                        "MyNode".to_string()
+                    } else {
+                        trimmed.to_string()
+                    }
+                }
+            };
 
             // Create directory if needed
             fs::create_dir_all(&memcloud_dir)?;
@@ -200,10 +218,10 @@ fn handle_node_action(action: NodeAction) -> anyhow::Result<()> {
                 .open(&log_file_path)?;
 
             // Spawn memnode as a detached background process
-            println!("🚀 Starting MemCloud node '{}' on port {}...", name, port);
+            println!("🚀 Starting MemCloud node '{}' on port {}...", final_name, port);
             
             let child = Command::new("memnode")
-                .args(["--name", &name, "--port", &port.to_string()])
+                .args(["--name", &final_name, "--port", &port.to_string()])
                 .stdin(Stdio::null())
                 .stdout(Stdio::from(log_file.try_clone()?))
                 .stderr(Stdio::from(log_file))

@@ -46,6 +46,15 @@ impl PeerManager {
             return Ok(());
         }
 
+        // Check if we are already connected to this address (avoid duplicates)
+        for entry in self.peers.iter() {
+            if entry.value().addr == addr {
+                info!("Already connected to peer at {}", addr);
+                // If it was a temporary ID, we might update it later via Hello, but connection exists.
+                return Ok(());
+            }
+        }
+
         info!("Connecting to peer {} at {}", id, addr);
         match TcpStream::connect(addr).await {
             Ok(stream) => {
