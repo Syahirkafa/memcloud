@@ -153,6 +153,9 @@ memcli node status
 memcli node stop
 # 🛑 Stopping MemCloud node (PID: 12345)...
 # ✅ Node stopped.
+
+# View logs
+memcli logs -f
 ```
 
 ### 2. Start the Daemon (Manual Mode)
