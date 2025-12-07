@@ -32,6 +32,10 @@ log_error() {
     echo "${RED}[ERROR]${NC} $1"
 }
 
+log_warn() {
+    echo "${CYAN}[WARN]${NC} $1"
+}
+
 # Detect OS and Architecture
 log_info "Detecting system architecture..."
 OS="$(uname -s)"
