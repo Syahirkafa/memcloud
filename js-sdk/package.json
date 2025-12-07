@@ -1,0 +1,35 @@
+{
+  "name": "memcloud-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for MemCloud",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "memcloud",
+    "sdk"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibhanshu2001/memcloud.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vibhanshu2001/memcloud/issues"
+  },
+  "homepage": "https://github.com/vibhanshu2001/memcloud#readme",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "author": "Vibhanshu Garg",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

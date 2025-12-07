@@ -1,0 +1,26 @@
+[package]
+name = "memcli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+memsdk = { path = "../memsdk" }
+clap = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["full"] }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+
+[package.metadata.deb]
+maintainer = "Vibhanshu Garg <vibhanshu@example.com>"
+copyright = "2024, Vibhanshu Garg"
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/memcli", "usr/bin/", "755"]
+]
+extended-description = """\
+MemCloud CLI
+Command-line interface for interacting with the MemCloud daemon.
+"""

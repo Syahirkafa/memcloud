@@ -1,0 +1,38 @@
+[package]
+name = "memnode"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+bincode = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+chacha20poly1305 = { workspace = true }
+rand = { workspace = true }
+anyhow = { workspace = true }
+mdns-sd = { workspace = true }
+dashmap = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+serde_json = "1.0.145"
+
+[package.metadata.deb]
+maintainer = "Vibhanshu Garg <vibhanshu@example.com>"
+copyright = "2024, Vibhanshu Garg"
+license-file = ["../LICENSE", "LICENSE"]
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/memnode", "usr/bin/", "755"],
+    ["../installers/linux/memcloud.service", "lib/systemd/system/", "644"]
+]
+extended-description = """\
+MemCloud Daemon
+A distributed in-memory data store for local networks.
+"""

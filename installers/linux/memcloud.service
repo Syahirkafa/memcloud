@@ -1,0 +1,12 @@
+[Unit]
+Description=MemCloud Daemon
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/memnode --name LinuxNode
+Restart=always
+User=root
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target
