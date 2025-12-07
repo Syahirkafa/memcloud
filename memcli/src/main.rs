@@ -60,11 +60,11 @@ enum Commands {
     },
     /// Load a block by ID (as string)
     Load {
-        id: u64,
+        id: String, // Updated to String
     },
     /// Free a block by ID
     Free {
-        id: u64,
+        id: String, // Updated to String
     },
     /// List connected peers
     Peers,
@@ -85,6 +85,12 @@ enum Commands {
     },
     /// Check the version of memcli and the connected node
     Version,
+    /// View daemon logs
+    Logs {
+        /// Follow log output
+        #[arg(short, long)]
+        follow: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -113,6 +119,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Node { action } => {
             handle_node_action(action)?;
         }
+        Commands::Logs { follow } => {
+            handle_logs(follow)?;
+        }
         other => {
             // All other commands require connecting to the daemon
             let mut client = MemCloudClient::connect().await?;
@@ -123,9 +132,37 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn handle_logs(follow: bool) -> anyhow::Result<()> {
+    let log_path = get_memcloud_dir().join("memnode.log");
+    
+    if !log_path.exists() {
+        println!("❌ No log file found at {:?}", log_path);
+        println!("   (Is the node running or has it been started with logging enabled?)");
+        return Ok(());
+    }
+
+    if follow {
+        // Use tail -f to follow logs
+        let mut child = Command::new("tail")
+            .arg("-f")
+            .arg(&log_path)
+            .spawn()?;
+        
+        // Wait for user to interrupt
+        child.wait()?;
+    } else {
+        // Print last lines or full file? Reading full file might be big.
+        // Let's print the whole file for now, user can pipe it.
+        let content = fs::read_to_string(log_path)?;
+        print!("{}", content);
+    }
+    Ok(())
+}
+
 fn handle_node_action(action: NodeAction) -> anyhow::Result<()> {
     let memcloud_dir = get_memcloud_dir();
     let pid_file = get_pid_file();
+    let log_file_path = memcloud_dir.join("memnode.log");
 
     match action {
         NodeAction::Start { name, port } => {
@@ -140,21 +177,39 @@ fn handle_node_action(action: NodeAction) -> anyhow::Result<()> {
             // Create directory if needed
             fs::create_dir_all(&memcloud_dir)?;
 
+            // Log Rotation: Check if log file is too big (> 3MB)
+            if log_file_path.exists() {
+                if let Ok(metadata) = fs::metadata(&log_file_path) {
+                    if metadata.len() > 3 * 1024 * 1024 { // 3MB limit
+                        let old_log = memcloud_dir.join("memnode.log.old");
+                        println!("📦 Rotating logs (exceeded 3MB)...");
+                        let _ = fs::rename(&log_file_path, old_log);
+                    }
+                }
+            }
+
+            // Open log file for appending
+            let log_file = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_file_path)?;
+
             // Spawn memnode as a detached background process
             println!("🚀 Starting MemCloud node '{}' on port {}...", name, port);
             
             let child = Command::new("memnode")
                 .args(["--name", &name, "--port", &port.to_string()])
                 .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
+                .stdout(Stdio::from(log_file.try_clone()?))
+                .stderr(Stdio::from(log_file))
                 .spawn()?;
-
+            
             let pid = child.id();
             fs::write(&pid_file, pid.to_string())?;
 
             println!("✅ Node started successfully (PID: {})", pid);
             println!("\n   Use 'memcli node status' to check the node.");
+            println!("   Use 'memcli logs -f' to view logs.");
             println!("   Use 'memcli node stop' to stop the node.");
         }
         NodeAction::Stop => {
@@ -203,14 +258,28 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
         }
         Commands::Load { id } => {
             let start = Instant::now();
-            let data = client.load(id).await?;
+            // Parse string id back to number or handle string in SDK?
+            // The SDK client.load expects BlockId (u64) OR we updated SDK?
+            // Wait, we updated SDK library (memsdk) and memnode rpc.
+            // But strict typing in Rust: memsdk::BlockId is still u64 in lib.rs?
+            // Let's check memsdk lib.rs.
+            // memsdk::BlockId is u64.
+            // The JSON serialization uses "string" on the wire, but Rust type is u64.
+            // We should parse the string CLI arg to u64 here.
+            
+            // If the ID is truly a large u64 that JS couldn't handle, Rust CAN handle it.
+            // But the CLI input comes as string. We need to parse it to u64.
+            
+            let id_u64 = id.parse::<u64>()?;
+            let data = client.load(id_u64).await?;
             let duration = start.elapsed();
             let string_data = String::from_utf8_lossy(&data);
             println!("Loaded block {}: '{}' (took {:?})", id, string_data, duration);
         }
         Commands::Free { id } => {
             let start = Instant::now();
-            client.free(id).await?;
+            let id_u64 = id.parse::<u64>()?;
+            client.free(id_u64).await?;
             let duration = start.elapsed();
             println!("Freed block {} (took {:?})", id, duration);
         }
@@ -250,7 +319,7 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
             let value = String::from_utf8_lossy(&data);
             println!("Get '{}' -> '{}' (took {:?})", key, value, duration);
         }
-        Commands::Node { .. } => unreachable!(), // Handled above
+        Commands::Node { .. } | Commands::Logs { .. } => unreachable!(), // Handled above
         Commands::Version => {
             println!("memcli {}", env!("CARGO_PKG_VERSION"));
             // Try to connect to node to get its version?
