@@ -43,6 +43,10 @@ pub enum SdkCommand {
     /// List keys with pattern (simple glob: *, prefix*, *suffix, *contains*)
     ListKeys { pattern: String },
     Stat,
+    // Streaming Commands
+    StreamStart { size_hint: Option<u64> },
+    StreamChunk { stream_id: u64, chunk_seq: u32, data: Vec<u8> },
+    StreamFinish { stream_id: u64 },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,6 +66,7 @@ pub enum SdkResponse {
         peers: usize,
         memory_usage: usize, // simplified
     },
+    StreamStarted { stream_id: u64 },
 }
 
 pub struct RpcServer {
@@ -215,10 +220,29 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                      memory_usage: memory,
                  }
             }
+            // Streaming Handlers
+            SdkCommand::StreamStart { size_hint } => {
+                let stream_id = block_manager.start_stream(size_hint);
+                SdkResponse::StreamStarted { stream_id }
+            }
+            SdkCommand::StreamChunk { stream_id, chunk_seq: _, data } => {
+                // chunk_seq can be used for ordering if using UDP, but over TCP/Unix it's sequential.
+                // We ignore it for now or could assert it matches expected index.
+                match block_manager.append_stream(stream_id, data) {
+                    Ok(_) => SdkResponse::Success,
+                    Err(e) => SdkResponse::Error { msg: e.to_string() },
+                }
+            }
+            SdkCommand::StreamFinish { stream_id } => {
+                match block_manager.finish_stream(stream_id) {
+                    Ok(id) => SdkResponse::Stored { id },
+                    Err(e) => SdkResponse::Error { msg: e.to_string() },
+                }
+            }
         };
 
         // Serialize MessagePack
-        let resp_bytes = rmp_serde::to_vec(&response)?;
+        let resp_bytes = rmp_serde::to_vec_named(&response)?;
         let resp_len = resp_bytes.len() as u32;
         stream.write_all(&resp_len.to_be_bytes()).await?;
         stream.write_all(&resp_bytes).await?;

@@ -42,6 +42,9 @@ pub enum SdkCommand {
     Get { key: String },
     ListKeys { pattern: String },
     Stat,
+    StreamStart { size_hint: Option<u64> },
+    StreamChunk { stream_id: u64, chunk_seq: u32, data: Vec<u8> },
+    StreamFinish { stream_id: u64 },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -53,6 +56,7 @@ pub enum SdkResponse {
     List { items: Vec<String> },
     Error { msg: String },
     Status { blocks: usize, peers: usize, memory_usage: usize },
+    StreamStarted { stream_id: u64 },
 }
 
 pub struct MemCloudClient {
@@ -67,7 +71,7 @@ impl MemCloudClient {
 
     async fn send_command(&mut self, cmd: SdkCommand) -> Result<SdkResponse> {
         // Serialize
-        let bytes = rmp_serde::to_vec(&cmd)?;
+        let bytes = rmp_serde::to_vec_named(&cmd)?;
         let len = bytes.len() as u32;
 
         // Send

@@ -31,6 +31,8 @@ pub struct InMemoryBlockManager {
     remote_locations: Arc<DashMap<BlockId, uuid::Uuid>>,
     // Track total memory usage in bytes
     current_memory: Arc<AtomicU64>,
+    // Streaming partial uploads
+    active_uploads: Arc<DashMap<u64, Vec<u8>>>,
 }
 
 impl InMemoryBlockManager {
@@ -41,6 +43,7 @@ impl InMemoryBlockManager {
             peer_manager,
             remote_locations: Arc::new(DashMap::new()),
             current_memory: Arc::new(AtomicU64::new(0)),
+            active_uploads: Arc::new(DashMap::new()),
         }
     }
 
@@ -178,6 +181,36 @@ impl InMemoryBlockManager {
          }
          
          Ok(None)
+    }
+
+    // Streaming Logic
+    pub fn start_stream(&self, size_hint: Option<u64>) -> u64 {
+        let stream_id = rand::random::<u64>();
+        let capacity = size_hint.unwrap_or(0) as usize;
+        self.active_uploads.insert(stream_id, Vec::with_capacity(capacity));
+        info!("Started stream upload ID: {} (Hint: {:?})", stream_id, size_hint);
+        stream_id
+    }
+
+    pub fn append_stream(&self, stream_id: u64, data: Vec<u8>) -> Result<()> {
+        if let Some(mut stream_buffer) = self.active_uploads.get_mut(&stream_id) {
+            stream_buffer.extend_from_slice(&data);
+            Ok(())
+        } else {
+            anyhow::bail!("Stream ID {} not found or already closed", stream_id);
+        }
+    }
+
+    pub fn finish_stream(&self, stream_id: u64) -> Result<BlockId> {
+        if let Some((_, data)) = self.active_uploads.remove(&stream_id) {
+            let id = rand::random::<u64>();
+            let block = Block { id, data };
+            self.put_block(block)?;
+            info!("Finished stream ID: {} -> Block ID: {}", stream_id, id);
+            Ok(id)
+        } else {
+            anyhow::bail!("Stream ID {} not found", stream_id);
+        }
     }
 }
 
