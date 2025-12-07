@@ -36,14 +36,9 @@ jobs:
           tar -czf ../memcloud-${{ matrix.target }}.tar.gz memnode memcli
 
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./memcloud-${{ matrix.target }}.tar.gz
-          asset_name: memcloud-${{ matrix.target }}.tar.gz
-          asset_content_type: application/gzip
+          files: memcloud-${{ matrix.target }}.tar.gz
 
   build-linux:
     runs-on: ubuntu-latest
@@ -62,27 +57,6 @@ jobs:
       - name: Build and Package (memcli)
         run: cargo deb -p memcli
 
-      - name: Upload .deb (memnode)
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./target/debian/memnode_0.1.0_amd64.deb
-          asset_name: memnode_0.1.0_amd64.deb
-          asset_content_type: application/vnd.debian.binary-package
-
-      - name: Upload .deb (memcli)
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./target/debian/memcli_0.1.0_amd64.deb
-          asset_name: memcli_0.1.0_amd64.deb
-          asset_content_type: application/vnd.debian.binary-package
-
-      # Also create a tarball for generic Linux use
       - name: Build Release Binary
         run: cargo build --release
 
@@ -94,12 +68,10 @@ jobs:
           cd dist
           tar -czf ../memcloud-x86_64-unknown-linux-gnu.tar.gz memnode memcli
 
-      - name: Upload Tarball
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./memcloud-x86_64-unknown-linux-gnu.tar.gz
-          asset_name: memcloud-x86_64-unknown-linux-gnu.tar.gz
-          asset_content_type: application/gzip
+          files: |
+            target/debian/memnode_0.1.0_amd64.deb
+            target/debian/memcli_0.1.0_amd64.deb
+            memcloud-x86_64-unknown-linux-gnu.tar.gz
