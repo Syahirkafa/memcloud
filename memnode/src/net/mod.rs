@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use anyhow::Result;
 use log::{info, error};
 use std::net::SocketAddr;
@@ -63,7 +63,7 @@ impl TransportServer {
                     let pm = self.peer_manager.clone();
                     
                     // Split stream
-                    let (mut reader, mut writer) = stream.into_split();
+                    let (reader, writer) = stream.into_split();
                     
                     // Send Hello (Handshake Reply)
                     // We need self ID and Name. PeerManager has it but it's private.
@@ -88,6 +88,9 @@ impl TransportServer {
                     // But `send_message` takes TcpStream. `send_message_locked` takes MutexGuard.
                     // Let's implement `send_message_write_half`?
                     // Or just use block:
+                    // Wrap in BufWriter
+                    let mut writer = BufWriter::new(writer);
+
                     {
                         // quick send
                         let bytes = bincode::serialize(&hello).unwrap_or_default();
@@ -99,6 +102,10 @@ impl TransportServer {
                         };
                          if let Err(e) = writer.write_all(&bytes).await {
                             error!("Failed to send Hello: {}", e);
+                            continue;
+                        };
+                         if let Err(e) = writer.flush().await {
+                            error!("Failed to flush Hello: {}", e);
                             continue;
                         };
                     }
@@ -122,17 +129,18 @@ impl TransportServer {
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
 // Helper for sending messages with a mutex-guarded write half
-pub async fn send_message_locked(writer: &mut tokio::sync::MutexGuard<'_, OwnedWriteHalf>, msg: &Message) -> Result<()> {
+pub async fn send_message_locked(writer: &mut tokio::sync::MutexGuard<'_, BufWriter<OwnedWriteHalf>>, msg: &Message) -> Result<()> {
     let bytes = bincode::serialize(msg)?;
     let len = bytes.len() as u32;
     writer.write_all(&len.to_be_bytes()).await?;
     writer.write_all(&bytes).await?;
+    writer.flush().await?; // Ensure packet is sent
     Ok(())
 }
 
 pub async fn handle_connection_split(
     mut reader: OwnedReadHalf, 
-    writer: Arc<Mutex<OwnedWriteHalf>>, 
+    writer: Arc<Mutex<BufWriter<OwnedWriteHalf>>>, 
     addr: SocketAddr, 
     block_manager: Arc<InMemoryBlockManager>, 
     peer_manager: Arc<PeerManager>

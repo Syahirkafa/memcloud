@@ -3,20 +3,21 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-use crate::net::{Message, send_message};
+use crate::net::Message;
 use log::{info, error};
 use anyhow::Result;
+
+use tokio::io::BufWriter;
 use tokio::net::tcp::OwnedWriteHalf;
 
 #[derive(Debug, Clone)]
 pub struct PeerInfo {
+    #[allow(dead_code)]
     pub id: Uuid,
     pub addr: SocketAddr,
     pub name: String,
-    // We keep a connection guarded by Mutex for thread safety
-    // In a high-perf system, we might use message passing (channels) instead of Mutex<TcpStream>
-    pub connection: Option<Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>>, 
+    // Buffered Writer for syscall reduction
+    pub connection: Option<Arc<tokio::sync::Mutex<BufWriter<OwnedWriteHalf>>>>, 
 }
 
 pub struct PeerManager {
@@ -59,13 +60,17 @@ impl PeerManager {
                 };
                 
                 // Split
-                let (reader, mut writer) = stream.into_split();
+                let (reader, writer) = stream.into_split();
                 
+                // Wrap writer in BufWriter
+                let mut writer = BufWriter::new(writer);
+
                 // Manual send hello on writer
                 let bytes = bincode::serialize(&hello)?;
                 let len = bytes.len() as u32;
                 writer.write_all(&len.to_be_bytes()).await?;
                 writer.write_all(&bytes).await?;
+                writer.flush().await?; // Flush initial hello
 
                 let writer_arc = Arc::new(tokio::sync::Mutex::new(writer));
 
@@ -142,7 +147,7 @@ impl PeerManager {
         self.add_discovered_peer(id, addr, block_manager, peer_manager).await
     }
 
-    pub fn handle_hello(&self, real_id: Uuid, name: String, addr: SocketAddr, connection: Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>) {
+    pub fn handle_hello(&self, real_id: Uuid, name: String, addr: SocketAddr, connection: Arc<tokio::sync::Mutex<BufWriter<tokio::net::tcp::OwnedWriteHalf>>>) {
         // 1. Check if we already know this stable ID
         if let Some(mut peer) = self.peers.get_mut(&real_id) {
              info!("Received Hello from existing peer {}. Updating name to '{}'", real_id, name);

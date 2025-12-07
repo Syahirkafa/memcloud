@@ -53,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 4. Start Transport Listener
     let transport = net::TransportServer::new(args.port, block_manager.clone(), peer_manager.clone()).await?;
-    let transport_port = args.port;
+    let _transport_port = args.port;
 
     // 5. Start Discovery (mDNS)
     let discovery = discovery::MdnsDiscovery::new(node_id, args.port, peer_manager.clone(), block_manager.clone())?;

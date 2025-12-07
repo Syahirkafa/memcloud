@@ -39,6 +39,8 @@ pub enum SdkCommand {
     // New KV commands
     Set { key: String, data: Vec<u8> },
     Get { key: String },
+    /// List keys with pattern (simple glob: *, prefix*, *suffix, *contains*)
+    ListKeys { pattern: String },
     Stat,
 }
 
@@ -47,7 +49,10 @@ pub enum SdkResponse {
     Stored { #[serde(with = "string_id")] id: BlockId },
     Loaded { data: Vec<u8> },
     Success,
-    List { items: Vec<String> },
+    List { items: Vec<String> }, // Reuse for Keys? Or explicit?
+    // Let's reuse List for keys to be simple, or add Keys?
+    // List is Vec<String>, Keys is Vec<String>. Reuse is fine.
+    // Clarification: ListPeers uses List. ListKeys can use List.
     Error { msg: String },
     // Stat response
     Status {
@@ -191,6 +196,10 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                     Ok(None) => SdkResponse::Error { msg: "Key not found locally or in cluster".to_string() },
                     Err(e) => SdkResponse::Error { msg: e.to_string() },
                 }
+            }
+            SdkCommand::ListKeys { pattern } => {
+                let keys = block_manager.list_keys(&pattern);
+                SdkResponse::List { items: keys }
             }
             SdkCommand::Stat => {
                  // Get real stats

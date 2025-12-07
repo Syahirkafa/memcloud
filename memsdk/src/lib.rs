@@ -39,6 +39,7 @@ pub enum SdkCommand {
     Connect { addr: String },
     Set { key: String, data: Vec<u8> },
     Get { key: String },
+    ListKeys { pattern: String },
     Stat,
 }
 
@@ -153,6 +154,15 @@ impl MemCloudClient {
         match self.send_command(cmd).await? {
             SdkResponse::Loaded { data } => Ok(data),
             SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response"),
+        }
+    }
+
+    pub async fn list_keys(&mut self, pattern: &str) -> Result<Vec<String>> {
+        let cmd = SdkCommand::ListKeys { pattern: pattern.to_string() };
+        match self.send_command(cmd).await? {
+            SdkResponse::List { items } => Ok(items),
+             SdkResponse::Error { msg } => anyhow::bail!(msg),
             _ => anyhow::bail!("Unexpected response"),
         }
     }

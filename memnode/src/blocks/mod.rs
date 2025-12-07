@@ -128,6 +128,33 @@ impl InMemoryBlockManager {
         }
     }
 
+    pub fn list_keys(&self, pattern: &str) -> Vec<String> {
+        let starts_wild = pattern.starts_with('*');
+        let ends_wild = pattern.ends_with('*');
+        let clean_pat = pattern.trim_matches('*');
+        
+        // Optimize: Special case for "*" to just collect directly
+        if pattern == "*" {
+            return self.key_index.iter().map(|kv| kv.key().clone()).collect();
+        }
+
+        self.key_index.iter()
+            .filter(|kv| {
+                let k = kv.key();
+                if starts_wild && ends_wild {
+                    k.contains(clean_pat)
+                } else if starts_wild {
+                    k.ends_with(clean_pat)
+                } else if ends_wild {
+                    k.starts_with(clean_pat)
+                } else {
+                    k == clean_pat
+                }
+            })
+            .map(|kv| kv.key().clone())
+            .collect()
+    }
+
     pub async fn get_block_async(&self, id: BlockId) -> Result<Option<Block>> {
          // 1. Try Local
          if let Some(entry) = self.blocks.get(&id) {

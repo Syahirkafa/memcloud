@@ -192,6 +192,11 @@ memcli set "app-config" "{\"theme\": \"dark\"}"
 
 # Get a Key-Value Pair
 memcli get "app-config"
+
+# List Keys (Redis-style patterns)
+memcli keys "*"          # List all
+memcli keys "user:*"     # List starting with 'user:'
+memcli keys "*config"    # List ending with 'config'
 ```
 
 **Load Data:**

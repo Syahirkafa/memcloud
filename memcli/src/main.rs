@@ -83,6 +83,11 @@ enum Commands {
     Get {
         key: String,
     },
+    /// List keys matching a pattern (default: *)
+    Keys {
+        #[arg(default_value = "*")]
+        pattern: String,
+    },
     /// Check the version of memcli and the connected node
     Version,
     /// View daemon logs
@@ -318,6 +323,20 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
             let duration = start.elapsed();
             let value = String::from_utf8_lossy(&data);
             println!("Get '{}' -> '{}' (took {:?})", key, value, duration);
+        }
+        Commands::Keys { pattern } => {
+            let start = Instant::now();
+            let keys = client.list_keys(&pattern).await?;
+            let duration = start.elapsed();
+            
+            if keys.is_empty() {
+                println!("No keys found matching '{}'", pattern);
+            } else {
+                for k in &keys {
+                    println!("{}", k);
+                }
+                println!("\nFound {} keys (took {:?})", keys.len(), duration);
+            }
         }
         Commands::Node { .. } | Commands::Logs { .. } => unreachable!(), // Handled above
         Commands::Version => {
