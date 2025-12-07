@@ -1,4 +1,5 @@
 import { MemSocket } from './socket';
+import { Readable } from 'stream';
 
 export interface Handle {
     id: string; // Now safe as string
@@ -37,6 +38,52 @@ export class MemCloud {
             throw new Error(resp.msg);
         }
         throw new Error("Unknown response: " + JSON.stringify(resp));
+    }
+
+    async storeStream(stream: Readable, options?: { chunkSize?: number }): Promise<Handle> {
+        // 1. Start Stream
+        console.log("Starting stream upload...");
+        // size_hint is optional, we pass null/undefined
+        const startResp = await this.socket.request({ cmd: 'StreamStart', size_hint: null });
+
+        if (startResp.res !== 'StreamStarted') {
+            throw new Error(startResp.msg || "Failed to start stream: " + JSON.stringify(startResp));
+        }
+        const streamId = startResp.stream_id;
+
+        // 2. Stream Data
+        let seq = 0;
+        let totalBytes = 0;
+
+        for await (const chunk of stream) {
+            const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            totalBytes += data.length;
+
+            // Send chunk
+            const chunkResp = await this.socket.request({
+                cmd: 'StreamChunk',
+                stream_id: streamId,
+                chunk_seq: seq++,
+                data
+            });
+
+            if (chunkResp.res === 'Error') {
+                throw new Error(chunkResp.msg);
+            }
+        }
+        console.log(`Streamed ${totalBytes} bytes in ${seq} chunks.`);
+
+        // 3. Finish
+        console.log("Finishing stream...");
+        const finishResp = await this.socket.request({ cmd: 'StreamFinish', stream_id: streamId });
+
+        if (finishResp.res === 'Stored') {
+            console.log(`Stored Stream -> Block ID: ${finishResp.id}`);
+            return { id: finishResp.id };
+        } else if (finishResp.res === 'Error') {
+            throw new Error(finishResp.msg);
+        }
+        throw new Error("Unknown response: " + JSON.stringify(finishResp));
     }
 
     async load(idOrHandle: string | Handle): Promise<Buffer> {
