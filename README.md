@@ -238,6 +238,15 @@ memcli peers
 memcli stats
 ```
 
+**Stream Data:**
+```bash
+# Stream from file
+memcli stream /path/to/access.log
+
+# Stream from stdin
+tail -f access.log | memcli stream
+```
+
 ### 5. JS SDK Usage
 
 Install the SDK:
