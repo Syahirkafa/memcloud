@@ -35,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let node_id = Uuid::new_v4();
 
-    info!("Starting MemCloud Node {} on port {}", node_id, args.port);
+
 
     // 1. Init PeerManager
     let peer_manager = Arc::new(peers::PeerManager::new(node_id, args.name.clone()));
@@ -52,11 +52,15 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // 4. Start Transport Listener
-    let transport = net::TransportServer::new(args.port, block_manager.clone(), peer_manager.clone()).await?;
-    let _transport_port = args.port;
+    let (transport, actual_port) = net::TransportServer::bind(args.port, block_manager.clone(), peer_manager.clone()).await?;
+    
+    if actual_port != args.port {
+        info!("Required port {} was busy, bound to {} instead", args.port, actual_port);
+    }
+    info!("Starting MemCloud Node {} on port {}", node_id, actual_port);
 
     // 5. Start Discovery (mDNS)
-    let discovery = discovery::MdnsDiscovery::new(node_id, args.port, peer_manager.clone(), block_manager.clone())?;
+    let discovery = discovery::MdnsDiscovery::new(node_id, actual_port, peer_manager.clone(), block_manager.clone())?;
     discovery.start_advertising()?;
     discovery.start_browsing()?;
 

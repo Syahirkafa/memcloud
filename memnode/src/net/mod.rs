@@ -47,11 +47,24 @@ pub struct TransportServer {
 }
 
 impl TransportServer {
-    pub async fn new(port: u16, block_manager: Arc<InMemoryBlockManager>, peer_manager: Arc<PeerManager>) -> Result<Self> {
-        let addr = format!("0.0.0.0:{}", port);
-        let listener = TcpListener::bind(&addr).await?;
-        info!("Transport listening on {}", addr);
-        Ok(Self { listener, block_manager, peer_manager })
+    pub async fn bind(start_port: u16, block_manager: Arc<InMemoryBlockManager>, peer_manager: Arc<PeerManager>) -> Result<(Self, u16)> {
+        let mut port = start_port;
+        // Try up to 10 ports
+        for _ in 0..10 {
+            let addr = format!("0.0.0.0:{}", port);
+            match TcpListener::bind(&addr).await {
+                Ok(listener) => {
+                    info!("Transport listening on {}", addr);
+                    return Ok((Self { listener, block_manager, peer_manager }, port));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                    info!("Port {} in use, trying next available port...", port);
+                    port += 1;
+                }
+                Err(e) => return Err(anyhow::Error::new(e)),
+            }
+        }
+        anyhow::bail!("Could not bind to any port starting from {} (tried 10 ports)", start_port);
     }
 
     pub async fn run(&self) {
