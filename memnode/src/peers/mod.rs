@@ -4,6 +4,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::net::TcpStream;
 use crate::net::Message;
+use crate::blocks::BlockManager; // Trait import
 use log::{info, error};
 use anyhow::Result;
 use serde::{Serialize, Deserialize};

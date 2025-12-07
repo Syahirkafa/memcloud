@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
+    Hello {
         version: u16,
         node_id: NodeId,
         name: String,

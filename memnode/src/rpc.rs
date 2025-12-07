@@ -251,12 +251,6 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                     Err(e) => SdkResponse::Error { msg: e.to_string() },
                 }
             }
-                    Err(e) => SdkResponse::Error { msg: e.to_string() },
-                }
-            }
-                    Err(e) => SdkResponse::Error { msg: e.to_string() },
-                }
-            }
             SdkCommand::Flush { target } => {
                 if let Some(t) = target {
                     match block_manager.flush_remote(t).await {
