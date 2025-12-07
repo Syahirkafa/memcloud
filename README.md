@@ -100,77 +100,115 @@ Binaries will be available in `target/release/`:
 
 ## Usage
 
-### 1. Start the Daemon
-Runs the node. Use `--name` to identify this machine.
-```bash
-# On Machine A
-./target/release/memnode --name "NodeA" --port 8080
+### 1. Start the Daemon (Easy Mode)
+Use `memcli` to manage the node as a background service:
 
-# On Machine B
-./target/release/memnode --name "NodeB" --port 8081
+```bash
+# Start node in background
+memcli node start --name "MacBookPro" --port 8080
+# 🚀 Starting MemCloud node 'MacBookPro' on port 8080...
+# ✅ Node started successfully (PID: 12345)
+
+# Check status
+memcli node status
+# ✅ MemCloud node is running (PID: 12345)
+
+# Stop the node
+memcli node stop
+# 🛑 Stopping MemCloud node (PID: 12345)...
+# ✅ Node stopped.
 ```
 
-### 2. Connect Peers (One-time)
+### 2. Start the Daemon (Manual Mode)
+For debugging or foreground operation:
+```bash
+# On Machine A
+memnode --name "NodeA" --port 8080
+
+# On Machine B
+memnode --name "NodeB" --port 8081
+```
+
+### 3. Connect Peers (One-time)
 If mDNS discovery doesn't automatically find peers (e.g. different subnets), use manual connect:
 ```bash
 # On NodeA, connect to NodeB
-./target/release/memcli connect <IP_OF_NODE_B>:8081
+memcli connect <IP_OF_NODE_B>:8081
 ```
 
-### 3. CLI Operations
+### 4. CLI Operations
 
 **Store Data:**
 ```bash
 # Store locally (or auto-distributed)
-./target/release/memcli store "Hello World"
+memcli store "Hello World"
 # Output: Stored block ID: 123456789
 
 # Store on specific peer
-./target/release/memcli store "Sensitive Data" --peer "NodeB"
+memcli store "Sensitive Data" --peer "NodeB"
 
 # Set a Key-Value Pair
-./target/release/memcli set "app-config" "{\"theme\": \"dark\"}"
+memcli set "app-config" "{\"theme\": \"dark\"}"
 # Output: Set 'app-config' -> {"theme": "dark"} (Block ID: 556677)
 
 # Get a Key-Value Pair
-./target/release/memcli get "app-config"
+memcli get "app-config"
 ```
 
 **Load Data:**
 ```bash
-./target/release/memcli load 123456789
+memcli load 123456789
 ```
 
 **List Peers:**
 ```bash
-./target/release/memcli peers
+memcli peers
 ```
 
-### 4. JS SDK Usage
-See `js-sdk/` for full code.
+**Show Stats:**
+```bash
+memcli stats
+```
 
+### 5. JS SDK Usage
+
+Install the SDK:
+```bash
+npm install memcloud
+```
+
+Example usage:
 ```typescript
-import { MemCloud } from 'memcloud-sdk';
+import { MemCloud } from 'memcloud';
 
-const cloud = new MemCloud(); // Defaults to /tmp/memcloud.sock
+const cloud = new MemCloud();
 
 async function main() {
     await cloud.connect();
 
-    // Store raw data
+    // Store and retrieve data
     const handle = await cloud.store("My Data");
     console.log("Stored ID:", handle.id);
 
-    // KV Store
+    const data = await cloud.load(handle.id);
+    console.log("Data:", data.toString());
+
+    // Key-Value Store
     await cloud.set("app-config", JSON.stringify({ theme: "dark" }));
-    
-    // Retrieve
     const config = await cloud.get("app-config");
-    console.log("Config:", config.toString());
+    console.log("Config:", JSON.parse(config.toString()));
+
+    // List peers
+    const peers = await cloud.peers();
+    console.log("Peers:", peers);
+
+    cloud.close();
 }
 
 main();
 ```
+
+See `js-sdk/README.md` for full API documentation.
 
 ## Distribution & Publishing
 

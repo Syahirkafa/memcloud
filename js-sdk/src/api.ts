@@ -46,9 +46,10 @@ export class MemCloud {
         throw new Error("Unknown response");
     }
 
-    async load(handle: Handle): Promise<Buffer> {
-        console.log(`Loading Block ID: ${handle.id}...`);
-        const resp = await this.socket.request({ Load: { id: handle.id } });
+    async load(idOrHandle: number | Handle): Promise<Buffer> {
+        const id = typeof idOrHandle === 'number' ? idOrHandle : idOrHandle.id;
+        console.log(`Loading Block ID: ${id}...`);
+        const resp = await this.socket.request({ Load: { id } });
 
         if (resp.Loaded) {
             // data is array of numbers
@@ -108,5 +109,10 @@ export class MemCloud {
 
     disconnect() {
         this.socket.end();
+    }
+
+    /** Alias for disconnect() */
+    close() {
+        this.disconnect();
     }
 }

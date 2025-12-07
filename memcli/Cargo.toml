@@ -10,6 +10,8 @@ tokio = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
+nix = { version = "0.29", features = ["signal", "process"] }
+dirs = "5.0"
 
 [package.metadata.deb]
 maintainer = "Vibhanshu Garg <vibhanshu@example.com>"

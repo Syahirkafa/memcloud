@@ -1,9 +1,38 @@
 use clap::{Parser, Subcommand};
 use memsdk::MemCloudClient;
 use std::time::Instant;
+use std::fs;
+use std::process::{Command, Stdio};
+use std::path::PathBuf;
+use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
+
+fn get_memcloud_dir() -> PathBuf {
+    let home = dirs::home_dir().expect("Could not find home directory");
+    home.join(".memcloud")
+}
+
+fn get_pid_file() -> PathBuf {
+    get_memcloud_dir().join("memnode.pid")
+}
+
+fn read_pid() -> Option<i32> {
+    let pid_file = get_pid_file();
+    if pid_file.exists() {
+        if let Ok(content) = fs::read_to_string(&pid_file) {
+            return content.trim().parse().ok();
+        }
+    }
+    None
+}
+
+fn is_process_running(pid: i32) -> bool {
+    // Check if process exists by sending signal 0
+    signal::kill(Pid::from_raw(pid), None).is_ok()
+}
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = "MemCloud CLI - Manage your distributed in-memory data store", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -14,6 +43,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Manage the MemCloud node daemon
+    Node {
+        #[command(subcommand)]
+        action: NodeAction,
+    },
     /// Store a string as a block
     Store {
         data: String,
@@ -51,18 +85,109 @@ enum Commands {
     },
 }
 
+#[derive(Subcommand)]
+enum NodeAction {
+    /// Start the MemCloud node daemon in background
+    Start {
+        /// Name for this node (visible to peers)
+        #[arg(long, short, default_value = "MyNode")]
+        name: String,
+        /// Port for peer-to-peer communication
+        #[arg(long, short, default_value_t = 8080)]
+        port: u16,
+    },
+    /// Stop the running MemCloud node daemon
+    Stop,
+    /// Check if the node daemon is running
+    Status,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
     let cli = Cli::parse();
-    // Socket path is now hardcoded in SDK connect for MVP or we should pass it.
-    // The previous SDK allowed passing it. The new SDK hardcodes /tmp/memcloud.sock in connect().
-    // Ideally we update SDK to accept path.
-    // For now, let's ignore the CLI arg or assume default.
-    
-    let mut client = MemCloudClient::connect().await?;
 
     match cli.command {
+        Commands::Node { action } => {
+            handle_node_action(action)?;
+        }
+        other => {
+            // All other commands require connecting to the daemon
+            let mut client = MemCloudClient::connect().await?;
+            handle_data_command(other, &mut client).await?;
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_node_action(action: NodeAction) -> anyhow::Result<()> {
+    let memcloud_dir = get_memcloud_dir();
+    let pid_file = get_pid_file();
+
+    match action {
+        NodeAction::Start { name, port } => {
+            // Check if already running
+            if let Some(pid) = read_pid() {
+                if is_process_running(pid) {
+                    println!("⚠️  MemCloud node is already running (PID: {})", pid);
+                    return Ok(());
+                }
+            }
+
+            // Create directory if needed
+            fs::create_dir_all(&memcloud_dir)?;
+
+            // Spawn memnode as a detached background process
+            println!("🚀 Starting MemCloud node '{}' on port {}...", name, port);
+            
+            let child = Command::new("memnode")
+                .args(["--name", &name, "--port", &port.to_string()])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+
+            let pid = child.id();
+            fs::write(&pid_file, pid.to_string())?;
+
+            println!("✅ Node started successfully (PID: {})", pid);
+            println!("\n   Use 'memcli node status' to check the node.");
+            println!("   Use 'memcli node stop' to stop the node.");
+        }
+        NodeAction::Stop => {
+            if let Some(pid) = read_pid() {
+                if is_process_running(pid) {
+                    println!("🛑 Stopping MemCloud node (PID: {})...", pid);
+                    signal::kill(Pid::from_raw(pid), Signal::SIGTERM)?;
+                    let _ = fs::remove_file(&pid_file);
+                    println!("✅ Node stopped.");
+                } else {
+                    println!("⚠️  Node is not running (stale PID file found).");
+                    let _ = fs::remove_file(&pid_file);
+                }
+            } else {
+                println!("⚠️  No MemCloud node is running.");
+            }
+        }
+        NodeAction::Status => {
+            if let Some(pid) = read_pid() {
+                if is_process_running(pid) {
+                    println!("✅ MemCloud node is running (PID: {})", pid);
+                } else {
+                    println!("❌ MemCloud node is not running (stale PID file).");
+                    let _ = fs::remove_file(&pid_file);
+                }
+            } else {
+                println!("❌ MemCloud node is not running.");
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyhow::Result<()> {
+    match cmd {
         Commands::Store { data, remote, peer } => {
             let start = Instant::now();
             let is_remote = remote || peer.is_some();
@@ -108,7 +233,6 @@ async fn main() -> anyhow::Result<()> {
             println!("Blocks Stored: {}", blocks);
             println!("Peers Connected: {}", peers);
             println!("Memory Usage: {} bytes", memory);
-            println!("Memory Usage: {} bytes", memory);
             println!("--------------------------------");
         }
         Commands::Set { key, value } => {
@@ -124,8 +248,8 @@ async fn main() -> anyhow::Result<()> {
             let value = String::from_utf8_lossy(&data);
             println!("Get '{}' -> '{}' (took {:?})", key, value, duration);
         }
+        Commands::Node { .. } => unreachable!(), // Handled above
     }
-
     Ok(())
 }
 
