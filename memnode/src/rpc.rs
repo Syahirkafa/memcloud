@@ -7,12 +7,33 @@ use std::sync::Arc;
 use crate::blocks::{BlockManager, Block, InMemoryBlockManager}; // Need concrete type for async method or cast
 use crate::metadata::BlockId;
 
+// Helper for string serialization of BlockId to safe-guard against JS/JSON precision loss
+mod string_id {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use crate::metadata::BlockId;
+
+    pub fn serialize<S>(id: &BlockId, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&id.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<BlockId, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SdkCommand {
     Store { data: Vec<u8> },
     StoreRemote { data: Vec<u8>, target: Option<String> }, 
-    Load { id: BlockId },
-    Free { id: BlockId },
+    Load { #[serde(with = "string_id")] id: BlockId },
+    Free { #[serde(with = "string_id")] id: BlockId },
     ListPeers,
     Connect { addr: String },
     // New KV commands
@@ -23,7 +44,7 @@ pub enum SdkCommand {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SdkResponse {
-    Stored { id: BlockId },
+    Stored { #[serde(with = "string_id")] id: BlockId },
     Loaded { data: Vec<u8> },
     Success,
     List { items: Vec<String> },

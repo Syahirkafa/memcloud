@@ -8,12 +8,33 @@ use serde_json;
 
 pub type BlockId = u64;
 
+// Helper for string serialization
+mod string_id {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use super::BlockId;
+
+    pub fn serialize<S>(id: &BlockId, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&id.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<BlockId, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SdkCommand {
     Store { data: Vec<u8> },
     StoreRemote { data: Vec<u8>, target: Option<String> },
-    Load { id: BlockId },
-    Free { id: BlockId },
+    Load { #[serde(with = "string_id")] id: BlockId },
+    Free { #[serde(with = "string_id")] id: BlockId },
     ListPeers,
     Connect { addr: String },
     Set { key: String, data: Vec<u8> },
@@ -23,7 +44,7 @@ pub enum SdkCommand {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SdkResponse {
-    Stored { id: BlockId },
+    Stored { #[serde(with = "string_id")] id: BlockId },
     Loaded { data: Vec<u8> },
     Success,
     List { items: Vec<String> },

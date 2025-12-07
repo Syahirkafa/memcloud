@@ -1,15 +1,7 @@
 import { MemSocket } from './socket';
 
 export interface Handle {
-    id: number; // BigInt serialized as number in JSON? Rust u64 fits in JS storage?
-    // JSON default behavior for u64 might be number if it fits double, or generic. 
-    // Rust serde_json serializes u64 as Number usually. JS Number is safe up to 2^53.
-    // u64 goes up to 2^64. We might lose precision!
-    // FIX: Rust serde_json can handle strings for large numbers if configured, but default is Number.
-    // For this demo, random u64 might exceed safe integer.
-    // We should treat ID as *any* or string if possible.
-    // Ideally update Rust to serialize ID as String?
-    // Let's treat it as any for now.
+    id: string; // Now safe as string
 }
 
 export class MemCloud {
@@ -24,7 +16,7 @@ export class MemCloud {
         console.log("Connected to MemCloud Daemon");
     }
 
-    async store(data: string | Buffer): Promise<Handle> {
+    async store(data: string | Buffer, target?: string): Promise<Handle> {
         // Convert data to number array for Rust Vec<u8> via serde_json? 
         // Rust serde_json `Vec<u8>` expects an Array of integers `[1, 2, ...]` usually.
         // It does NOT support raw byte string by default unless using `serde_bytes`.
@@ -34,8 +26,16 @@ export class MemCloud {
         const payload = Buffer.isBuffer(data) ? data : Buffer.from(data);
         const dataArray = Array.from(payload);
 
-        console.log(`Storing ${payload.length} bytes...`);
-        const resp = await this.socket.request({ Store: { data: dataArray } });
+        let cmd: any;
+        if (target) {
+            console.log(`Storing ${payload.length} bytes on peer '${target}'...`);
+            cmd = { StoreRemote: { data: dataArray, target } };
+        } else {
+            console.log(`Storing ${payload.length} bytes...`);
+            cmd = { Store: { data: dataArray } };
+        }
+
+        const resp = await this.socket.request(cmd);
 
         if (resp.Stored) {
             console.log(`Stored Block ID: ${resp.Stored.id}`);
@@ -46,8 +46,8 @@ export class MemCloud {
         throw new Error("Unknown response");
     }
 
-    async load(idOrHandle: number | Handle): Promise<Buffer> {
-        const id = typeof idOrHandle === 'number' ? idOrHandle : idOrHandle.id;
+    async load(idOrHandle: string | Handle): Promise<Buffer> {
+        const id = typeof idOrHandle === 'string' ? idOrHandle : idOrHandle.id;
         console.log(`Loading Block ID: ${id}...`);
         const resp = await this.socket.request({ Load: { id } });
 
@@ -101,6 +101,17 @@ export class MemCloud {
 
         if (resp.List) {
             return resp.List.items;
+        } else if (resp.Error) {
+            throw new Error(resp.Error.msg);
+        }
+        throw new Error("Unknown response");
+    }
+
+    async free(id: string): Promise<void> {
+        // id is string
+        const resp = await this.socket.request({ Free: { id } });
+        if (resp.Success) {
+            return;
         } else if (resp.Error) {
             throw new Error(resp.Error.msg);
         }

@@ -22,9 +22,12 @@ async function main() {
     const cloud = new MemCloud();
     await cloud.connect();
 
-    // Store data
+    // Store data (distributed automatically or locally)
     const handle = await cloud.store("Hello, MemCloud!");
     console.log("Stored with ID:", handle.id);
+
+    // Store data on a specific peer (optional)
+    // const remoteHandle = await cloud.store("Sensitive Data", "Laptop-Node");
 
     // Retrieve data
     const data = await cloud.load(handle.id);
@@ -58,13 +61,16 @@ Options:
 ### `connect(): Promise<void>`
 Connects to the local MemCloud daemon.
 
-### `store(data: string | Buffer): Promise<Handle>`
-Stores data in the local node. Returns a handle with the block ID.
+### `store(data: string | Buffer, target?: string): Promise<Handle>`
+Stores data in the local node or on a specific remote peer. Returns a handle with the block ID.
 
-### `load(id: number): Promise<Buffer>`
+- `data`: The content to store.
+- `target` (optional): The ID or Name of a connected peer to store data on directly.
+
+### `load(id: string): Promise<Buffer>`
 Loads data by block ID.
 
-### `set(key: string, value: string | Buffer): Promise<number>`
+### `set(key: string, value: string | Buffer): Promise<string>`
 Sets a key-value pair. Returns the block ID.
 
 ### `get(key: string): Promise<Buffer>`
