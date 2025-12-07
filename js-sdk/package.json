@@ -1,5 +1,5 @@
 {
-  "name": "memcloud-sdk",
+  "name": "memcloud",
   "version": "0.1.0",
   "description": "TypeScript SDK for MemCloud",
   "main": "dist/index.js",
