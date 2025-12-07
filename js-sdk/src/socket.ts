@@ -61,13 +61,12 @@ export class MemSocket {
                 if (expectedLen !== null) {
                     if (accumulated.length >= expectedLen) {
                         const body = accumulated.slice(0, expectedLen);
-                        const remainder = accumulated.slice(expectedLen);
+                        const remainder = accumulated.slice(expectedLen); // Ignoring remainder for now (assuming one resp)
 
                         // Cleanup
                         this.client.off('data', onData);
-
-                        // If there is remainder, we might have lost data for next request? 
-                        // Simplified SDK: We assume sequential request-response.
+                        this.client.off('error', onError);
+                        this.client.off('close', onClose);
 
                         try {
                             const resp = unpack(body);
@@ -78,7 +77,24 @@ export class MemSocket {
                     }
                 }
             };
+
+            const onError = (err: Error) => {
+                this.client.off('data', onData);
+                this.client.off('close', onClose);
+                reject(err);
+            };
+
+            const onClose = (hadError: boolean) => {
+                this.client.off('data', onData);
+                this.client.off('error', onError);
+                if (!hadError) {
+                    reject(new Error("Socket closed unexpectedly"));
+                }
+            };
+
             this.client.on('data', onData);
+            this.client.once('error', onError);
+            this.client.once('close', onClose);
         });
     }
 
