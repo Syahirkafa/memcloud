@@ -1,8 +1,51 @@
 # MemCloud ☁️
 
+![Rust](https://img.shields.io/badge/language-rust-orange)
+![Platform](https://img.shields.io/badge/platform-macos%20%7C%20linux-blue)
+![Status](https://img.shields.io/badge/status-alpha-red)
+[![NPM](https://img.shields.io/npm/v/memcloud)](https://www.npmjs.com/package/memcloud)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **MemCloud** is a distributed in-memory data store written in Rust. It allows nodes (such as macOS and Linux machines) on a local network to pool their RAM, creating a shared, ephemeral storage cloud.
 
+> *"Turning nearby devices into your personal RAM farm."*
+
+---
+
+## 🔥 Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Distributed RAM Pooling** | Combine idle RAM from multiple devices on your LAN |
+| **Zero-Config Discovery** | Automatic peer discovery via mDNS — no manual IP setup |
+| **Millisecond Latency** | Store/load data across devices in < 10ms on local network |
+| **Multi-Device Support** | Works with macOS, Ubuntu, and other Linux distros |
+| **Works Offline** | Fully functional over LAN without internet connection |
+| **CLI + SDKs** | Command-line interface, Rust SDK, and TypeScript/JS SDK |
+| **Daemon Mode** | Run as background service with `memcli node start` |
+| **Key-Value Store** | `set(key, value)` and `get(key)` in addition to raw blocks |
+
+---
+
+## 🛣️ Roadmap
+
+- [x] Local RPC API (Unix Socket + JSON TCP)
+- [x] Rust SDK (`memsdk`)
+- [x] NPM/TypeScript SDK (`memcloud`)
+- [x] CLI daemon management (`memcli node start/stop/status`)
+- [ ] Block replication (store on 2+ devices for redundancy)
+- [ ] Memory pressure handling & eviction policies
+- [ ] Python SDK
+- [ ] LLM KV-cache offloading integration
+- [ ] Homebrew formula
+- [ ] .deb/.rpm system packages
+
+---
+
 ## 🏗️ Architecture
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed diagrams and data flow.
+
 ```mermaid
 flowchart TD
 
@@ -40,20 +83,13 @@ flowchart TD
     %% Remote relationships
     RemoteDaemon --> RemoteRAM
 ```
-1.  **MemNode**: The core daemon running on each machine. It handles storage, networking, and discovery.
-- `memsdk/`: Rust & C SDK Library.
-- `memcli/`: The command-line client.
-- `js-sdk/`: TypeScript SDK.
-- `installers/`: Systemd/Launchd scripts.
 
-## Features
-
-- **Distributed Storage**: Seamlessly store and retrieve data blocks across peers.
-- **Bi-Directional Sync**: Nodes can push data or fetch data from remote peers silently.
-- **Named Peers**: Assign names to your nodes (e.g., "MacBook", "UbuntuBox") for easy targeting.
-- **Key-Value Store**: Support for `set(key, value)` and `get(key)` in addition to raw block IDs.
-- **JS SDK**: A TypeScript SDK for building Node.js applications on top of MemCloud.
-- **CLI**: A powerful command-line interface for interaction and debugging.
+**Project Structure:**
+- `memnode/` — The core daemon running on each machine
+- `memsdk/` — Rust SDK Library
+- `memcli/` — Command-line client
+- `js-sdk/` — TypeScript SDK (published as `memcloud` on npm)
+- `installers/` — Systemd/Launchd service files
 
 ## 🆚 Comparison
 
@@ -209,6 +245,24 @@ main();
 ```
 
 See `js-sdk/README.md` for full API documentation.
+
+## Uninstallation
+
+To completely remove MemCloud from your system:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vibhanshu2001/memcloud/main/uninstall.sh | sh
+```
+
+This will:
+- Stop the running daemon (if any)
+- Remove `memnode` and `memcli` from `/usr/local/bin`
+- Optionally remove the `~/.memcloud/` config directory
+
+To uninstall the JS SDK:
+```bash
+npm uninstall memcloud
+```
 
 ## Distribution & Publishing
 
