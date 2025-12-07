@@ -9,10 +9,11 @@ use tokio::sync::Mutex;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Message {
-    Hello {
         version: u16,
         node_id: NodeId,
         name: String,
+        total_memory: u64,
+        used_memory: u64,
     },
     PutBlock {
         id: BlockId,
@@ -34,6 +35,7 @@ pub enum Message {
         data: Option<Vec<u8>>,
     },
     Ack,
+    Flush,
 }
 
 use std::sync::Arc;
@@ -94,6 +96,8 @@ impl TransportServer {
                         version: 1,
                         node_id: my_id,
                         name: my_name,
+                        total_memory: 8 * 1024 * 1024 * 1024, // 8GB Mock
+                        used_memory: bm.used_space(),
                     };
                     
                     // Sending Hello needs to happen before we pass writer to handler, OR we clone/lock it?
@@ -179,9 +183,9 @@ pub async fn handle_connection_split(
         info!("Received message from {}: {:?}", addr, msg);
 
         match msg {
-            Message::Hello { version: _, node_id, name } => {
+            Message::Hello { version: _, node_id, name, total_memory, used_memory } => {
                 // Handle Handshake
-                peer_manager.handle_hello(node_id, name, addr, writer.clone());
+                peer_manager.handle_hello(node_id, name, addr, writer.clone(), total_memory, used_memory);
             }
             Message::GetBlock { id } => {
                 use crate::blocks::BlockManager;
@@ -239,6 +243,10 @@ pub async fn handle_connection_split(
                 if let Some(d) = data {
                     peer_manager.satisfy_key_request(&key, d);
                 }
+            }
+            Message::Flush => {
+                info!("Received Flush command from peer. Clearing local memory.");
+                block_manager.flush();
             }
             _ => {}
         }

@@ -45,21 +45,29 @@ const features = [
   {
     icon: TerminalIcon,
     title: "CLI + SDKs",
-    description: "Command-line interface, Rust SDK, and TypeScript/JS SDK included.",
+    description: "Command-line interface, Rust SDK, and TypeScript/JS SDK included. (Python, Java & Go in development)",
   },
 ];
 
-const codeExample = `import {MemCloud} from 'memcloud';
-
-    const cloud = new MemCloud();
-    await cloud.connect();
-
-    // Store data across your network
-    const handle = await cloud.store("My Data");
-
-    // Key-Value operations
-    await cloud.set("config", JSON.stringify({theme: "dark" }));
-    const config = await cloud.get("config");`;
+const codeExample = `import { MemCloud } from 'memcloud';
+ 
+ const cloud = new MemCloud();
+ await cloud.connect();
+ 
+ // 1. Find devices on your network
+ const peers = await cloud.peers();
+ console.log(\`Found \${peers.length} peers to pool RAM with.\`);
+ 
+ // 2. Store data (automatically distributed)
+ const handle = await cloud.store("My Critical Data");
+ console.log(\`Stored on network: \${handle.id}\`);
+ 
+ // 3. Offload stream to specific peer (Infinite RAM)
+ import fs from 'fs';
+ const stream = fs.createReadStream('./massive-file.bin');
+ await cloud.storeStream(stream, { target: peers[0] });
+ 
+ cloud.close();`;
 
 const Index = () => {
   return (
@@ -163,7 +171,16 @@ const Index = () => {
           <div className="text-center mb-10">
             <h2 className="text-2xl md:text-3xl font-bold mb-4">Simple API</h2>
             <p className="text-muted-foreground">
-              Get started with just a few lines of code
+              Get started with just a few lines of code. Check out our{' '}
+              <a
+                href="https://github.com/vibhanshu2001/memcloud/tree/main/examples/nodejs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline underline-offset-4 font-medium transition-colors"
+              >
+                sample Node.js scripts
+              </a>
+              .
             </p>
           </div>
 
@@ -173,6 +190,39 @@ const Index = () => {
             <Terminal command="npm install memcloud" className="flex-1 min-w-[280px]" />
           </div>
           <CodeBlock code={codeExample} language="typescript" />
+        </div>
+      </section>
+
+      {/* Case Study */}
+      <section className="relative z-10 container mx-auto px-4 py-16 md:py-24 bg-secondary/20">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex flex-col md:flex-row items-center gap-12">
+            <div className="flex-1">
+              <Badge variant="outline" className="mb-4">Case Study</Badge>
+              <h2 className="text-2xl md:text-3xl font-bold mb-4">"Infinite RAM" Log Archiver</h2>
+              <p className="text-muted-foreground mb-6">
+                We processed <strong>1GB of raw access logs</strong>, compressed them in real-time, and streamed them to a peer device using MemCloud.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-background rounded-lg border border-border">
+                  <div className="text-3xl font-bold text-primary mb-1">1 GB</div>
+                  <div className="text-sm text-muted-foreground">Data Processed</div>
+                </div>
+                <div className="p-4 bg-background rounded-lg border border-border">
+                  <div className="text-3xl font-bold text-code-green mb-1">129 MB</div>
+                  <div className="text-sm text-muted-foreground">Peak Local RAM Usage</div>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 w-full">
+              <Terminal command="node log-archiver.js" className="w-full" />
+              <div className="mt-4 p-4 bg-background/50 rounded-lg font-mono text-sm text-muted-foreground border border-border">
+                <div className="text-code-green">✓ Archival Complete!</div>
+                <div>🗄️ Archive ID: 5589244116346939227</div>
+                <div>🏁 Final Local RAM: 129MB</div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -230,6 +280,14 @@ const Index = () => {
                   </td>
                   <td className="py-4 px-4 text-center text-muted-foreground">Session Store</td>
                   <td className="py-4 px-4 text-center text-muted-foreground">String Cache</td>
+                </tr>
+                <tr>
+                  <td className="py-4 px-4 text-muted-foreground">Performance</td>
+                  <td className="py-4 px-4 text-center text-primary font-bold">
+                    ~25k Ops/sec
+                  </td>
+                  <td className="py-4 px-4 text-center text-muted-foreground">~30k Ops/sec</td>
+                  <td className="py-4 px-4 text-center text-muted-foreground">~40k Ops/sec</td>
                 </tr>
               </tbody>
             </table>

@@ -6,6 +6,7 @@ use tokio::net::TcpStream;
 use crate::net::Message;
 use log::{info, error};
 use anyhow::Result;
+use serde::{Serialize, Deserialize};
 
 use tokio::io::BufWriter;
 use tokio::net::tcp::OwnedWriteHalf;
@@ -16,8 +17,19 @@ pub struct PeerInfo {
     pub id: Uuid,
     pub addr: SocketAddr,
     pub name: String,
+    pub total_memory: u64,
+    pub used_memory: u64,
     // Buffered Writer for syscall reduction
     pub connection: Option<Arc<tokio::sync::Mutex<BufWriter<OwnedWriteHalf>>>>, 
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PeerMetadata {
+    pub id: String,
+    pub name: String,
+    pub addr: String,
+    pub total_memory: u64,
+    pub used_memory: u64,
 }
 
 pub struct PeerManager {
@@ -66,6 +78,8 @@ impl PeerManager {
                     version: 1,
                     node_id: self.self_id,
                     name: self.self_name.clone(),
+                    total_memory: 8 * 1024 * 1024 * 1024, // 8GB Mock
+                    used_memory: block_manager.used_space(),
                 };
                 
                 // Split
@@ -87,6 +101,8 @@ impl PeerManager {
                     id,
                     addr,
                     name: "Unknown".to_string(), 
+                    total_memory: 0,
+                    used_memory: 0,
                     connection: Some(writer_arc.clone()),
                 };
                 
@@ -138,6 +154,18 @@ impl PeerManager {
         anyhow::bail!("Peer not connected")
     }
 
+    pub fn get_peer_metadata_list(&self) -> Vec<PeerMetadata> {
+        self.peers.iter()
+            .map(|kv| PeerMetadata {
+                id: kv.key().to_string(),
+                name: kv.value().name.clone(),
+                addr: kv.value().addr.to_string(),
+                total_memory: kv.value().total_memory,
+                used_memory: kv.value().used_memory,
+            })
+            .collect()
+    }
+    
     pub fn list_peers(&self) -> Vec<String> {
         self.peers.iter()
             .map(|kv| format!("{} ({}) @ {}", kv.key(), kv.value().name, kv.value().addr))
@@ -156,11 +184,13 @@ impl PeerManager {
         self.add_discovered_peer(id, addr, block_manager, peer_manager).await
     }
 
-    pub fn handle_hello(&self, real_id: Uuid, name: String, addr: SocketAddr, connection: Arc<tokio::sync::Mutex<BufWriter<tokio::net::tcp::OwnedWriteHalf>>>) {
+    pub fn handle_hello(&self, real_id: Uuid, name: String, addr: SocketAddr, connection: Arc<tokio::sync::Mutex<BufWriter<tokio::net::tcp::OwnedWriteHalf>>>, total_memory: u64, used_memory: u64) {
         // 1. Check if we already know this stable ID
         if let Some(mut peer) = self.peers.get_mut(&real_id) {
              info!("Received Hello from existing peer {}. Updating name to '{}'", real_id, name);
              peer.name = name;
+             peer.total_memory = total_memory;
+             peer.used_memory = used_memory;
              // Update connection if the new one is different/fresher? 
              // For now, if we are receiving Hello on a connection, that connection is active.
              // It might be the SAME connection arc if we just spawned it.
@@ -196,6 +226,8 @@ impl PeerManager {
             id: real_id,
             addr,
             name,
+            total_memory,
+            used_memory,
             connection: Some(connection),
         };
         self.peers.insert(real_id, new_info);

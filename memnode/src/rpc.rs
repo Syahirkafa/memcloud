@@ -47,6 +47,7 @@ pub enum SdkCommand {
     StreamStart { size_hint: Option<u64> },
     StreamChunk { stream_id: u64, chunk_seq: u32, #[serde(with = "serde_bytes")] data: Vec<u8> },
     StreamFinish { stream_id: u64, target: Option<String> },
+    Flush { target: Option<String> },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -55,10 +56,8 @@ pub enum SdkResponse {
     Stored { #[serde(with = "string_id")] id: BlockId },
     Loaded { #[serde(with = "serde_bytes")] data: Vec<u8> },
     Success,
-    List { items: Vec<String> }, // Reuse for Keys? Or explicit?
-    // Let's reuse List for keys to be simple, or add Keys?
-    // List is Vec<String>, Keys is Vec<String>. Reuse is fine.
-    // Clarification: ListPeers uses List. ListKeys can use List.
+    List { items: Vec<String> }, // Keep for keys
+    PeerList { peers: Vec<crate::peers::PeerMetadata> },
     Error { msg: String },
     // Stat response
     Status {
@@ -67,6 +66,7 @@ pub enum SdkResponse {
         memory_usage: usize, // simplified
     },
     StreamStarted { stream_id: u64 },
+    FlushSuccess,
 }
 
 pub struct RpcServer {
@@ -175,13 +175,8 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                 }
             }
             SdkCommand::ListPeers => {
-                // Accessing peer_manager from block_manager requires exposing it or holding a ref in RpcServer
-                // Since BlockManager trait doesn't expose it, and we hold Arc<InMemoryBlockManager> concrete type, we need to access the field.
-                // However, the field `peer_manager` is private in BlockManager. 
-                // We should expose a helper on InMemoryBlockManager or update the architecture.
-                // For speed, let's assume we add a `get_peer_list` method to InMemoryBlockManager.
-                let peers = block_manager.get_peer_list();
-                SdkResponse::List { items: peers }
+                let peers = block_manager.get_peer_ext_list();
+                SdkResponse::PeerList { peers }
             }
             SdkCommand::Connect { addr } => {
                 match block_manager.connect_peer(&addr, block_manager.clone()).await {
@@ -254,6 +249,23 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                          }
                     }
                     Err(e) => SdkResponse::Error { msg: e.to_string() },
+                }
+            }
+                    Err(e) => SdkResponse::Error { msg: e.to_string() },
+                }
+            }
+                    Err(e) => SdkResponse::Error { msg: e.to_string() },
+                }
+            }
+            SdkCommand::Flush { target } => {
+                if let Some(t) = target {
+                    match block_manager.flush_remote(t).await {
+                         Ok(_) => SdkResponse::FlushSuccess,
+                         Err(e) => SdkResponse::Error { msg: e.to_string() },
+                    }
+                } else {
+                    block_manager.flush();
+                    SdkResponse::FlushSuccess
                 }
             }
         };

@@ -67,13 +67,21 @@ const commands: CommandStep[] = [
     delay: 1200,
   },
   {
-    command: 'memcli set "ml-cache" "$(cat model_weights.bin)"',
+    command: 'memcli stream logs/access.log --compress',
     output: [
-      '⏳ Storing 256MB across cluster...',
-      '✅ Set "ml-cache" -> [256MB binary] (Block ID: 8847291)',
-      '📍 Replicated to: UbuntuServer, LinuxDesktop',
+      '🌊 Streaming [access.log] to MemCloud cluster...',
+      '⚙️  Configuration: Gzip Compression | Strategy: Distributed',
+      '',
+      '⠋ Processing stream... ',
+      '  25% [====>                 ] 250MB | RSS: 112MB',
+      '  50% [=========>            ] 500MB | RSS: 114MB',
+      '  75% [===============>      ] 750MB | RSS: 118MB',
+      '  100% [====================>] 1.0GB | RSS: 129MB',
+      '',
+      '✅ Stream Complete! (Block ID: 55892441163469)',
+      '📉 Compression Ratio: 8.4x (Stored 121MB)',
     ],
-    delay: 1000,
+    delay: 1500,
   },
   {
     command: 'memcli stats',
@@ -83,13 +91,27 @@ const commands: CommandStep[] = [
       '├─────────────────────────────────────┤',
       '│ Nodes Online:     3                 │',
       '│ Total RAM Pool:   15.0 GB           │',
-      '│ Used:             4.2 GB (28%)      │',
+      '│ Used:             1.12 GB (7.4%)    │',
       '│ Avg Latency:      2.3ms             │',
-      '│ Blocks Stored:    847               │',
+      '│ Blocks Stored:    12,403            │',
       '╰─────────────────────────────────────╯',
     ],
-    delay: 800,
+    delay: 1500,
   },
+  {
+    command: 'memcli flush --all',
+    output: [
+      '⚠️  Warning: This will delete ALL data from the cluster.',
+      'Auto-confirming (demo mode)...',
+      '',
+      '🧹 Flushing cluster memory...',
+      '   • Node [MacBookPro]: Freed 129MB',
+      '   • Node [UbuntuServer]: Freed 992MB',
+      '',
+      '✅ Cluster flushed. 1.12 GB reclaimed.',
+    ],
+    delay: 1000,
+  }
 ];
 
 export const InteractiveTerminal = () => {
@@ -98,10 +120,10 @@ export const InteractiveTerminal = () => {
   const [showOutput, setShowOutput] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
-  const [hasStarted, setHasStarted] = useState(false);
+  const [hasStarted, setHasStarted] = useState(true);
   const [visibleLines, setVisibleLines] = useState<string[]>([]);
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
 
   // Helper to clear all pending timeouts
   const clearAllTimeouts = useCallback(() => {
@@ -376,15 +398,7 @@ export const InteractiveTerminal = () => {
               </div>
             )}
 
-            {!hasStarted && (
-              <button
-                onClick={handleStart}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-semibold shadow-sm transition-all hover:scale-105 active:scale-95"
-              >
-                <Play className="w-3 h-3 fill-current" />
-                Run Demo
-              </button>
-            )}
+            {/* Run Demo Logic Removed (Auto-Starts) */}
           </div>
 
           {/* Windows Controls */}
@@ -403,43 +417,35 @@ export const InteractiveTerminal = () => {
 
       {/* Terminal content - Auto Height */}
       <div className="p-4 font-mono text-sm transition-all duration-300 ease-in-out text-left bg-terminal-bg">
-        <div className={`${!hasStarted ? 'h-[200px] flex items-center justify-center' : 'min-h-[200px]'}`}>
-          {!hasStarted ? (
-            <div className="text-muted-foreground">
-              <p className="text-center">
-                Click <span className="text-primary">"Run Demo"</span> to see MemCloud in action
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Current step content */}
-              {currentStep < commands.length && (
-                <div className="text-left w-full">
-                  <div className="flex items-start gap-2 text-left">
-                    <span className="text-code-green select-none shrink-0">❯</span>
-                    <span className="text-foreground break-all text-left">
-                      {typedCommand}
-                      {isTyping && (
-                        <span className="inline-block w-2 h-4 bg-primary ml-0.5 animate-pulse" />
-                      )}
-                    </span>
-                  </div>
-                  {showOutput && (
-                    <div className="mt-2 pl-4 space-y-0.5 animate-fade-in text-left">
-                      {visibleLines.map((line, lineIndex) => (
-                        <p
-                          key={lineIndex}
-                          className="text-muted-foreground text-xs leading-relaxed whitespace-pre-wrap break-words text-left"
-                        >
-                          {line}
-                        </p>
-                      ))}
-                    </div>
-                  )}
+        <div className="min-h-[200px]">
+          <div className="space-y-4">
+            {/* Current step content */}
+            {currentStep < commands.length && (
+              <div className="text-left w-full">
+                <div className="flex items-start gap-2 text-left">
+                  <span className="text-code-green select-none shrink-0">❯</span>
+                  <span className="text-foreground break-all text-left">
+                    {typedCommand}
+                    {isTyping && (
+                      <span className="inline-block w-2 h-4 bg-primary ml-0.5 animate-pulse" />
+                    )}
+                  </span>
                 </div>
-              )}
-            </div>
-          )}
+                {showOutput && (
+                  <div className="mt-2 pl-4 space-y-0.5 animate-fade-in text-left">
+                    {visibleLines.map((line, lineIndex) => (
+                      <p
+                        key={lineIndex}
+                        className="text-muted-foreground text-xs leading-relaxed whitespace-pre-wrap break-words text-left"
+                      >
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -459,10 +465,10 @@ export const InteractiveTerminal = () => {
                     setCurrentStep(index);
                   }}
                   className={`w-2 h-2 rounded-full transition-all duration-300 ${index < currentStep
-                      ? "bg-code-green hover:bg-code-green/80"
-                      : index === currentStep
-                        ? "bg-primary scale-125 animate-pulse"
-                        : "bg-muted hover:bg-muted-foreground"
+                    ? "bg-code-green hover:bg-code-green/80"
+                    : index === currentStep
+                      ? "bg-primary scale-125 animate-pulse"
+                      : "bg-muted hover:bg-muted-foreground"
                     }`}
                   aria-label={`Go to step ${index + 1}`}
                 />

@@ -85,6 +85,10 @@ impl InMemoryBlockManager {
     pub fn get_peer_list(&self) -> Vec<String> {
         self.peer_manager.list_peers()
     }
+    
+    pub fn get_peer_ext_list(&self) -> Vec<crate::peers::PeerMetadata> {
+        self.peer_manager.get_peer_metadata_list()
+    }
 
     pub async fn connect_peer(&self, addr: &str, block_manager: Arc<InMemoryBlockManager>) -> Result<()> {
         self.peer_manager.manual_connect(addr, block_manager, self.peer_manager.clone()).await
@@ -206,6 +210,32 @@ impl InMemoryBlockManager {
             Ok(data)
         } else {
             anyhow::bail!("Stream ID {} not found", stream_id);
+        }
+    }
+
+    pub fn flush(&self) {
+        self.blocks.clear();
+        self.key_index.clear();
+        self.remote_locations.clear();
+        self.active_uploads.clear();
+        self.current_memory.store(0, Ordering::Relaxed);
+        info!("Cluster memory flushed locally.");
+    }
+
+    pub async fn flush_remote(&self, target: String) -> Result<()> {
+        let peer_id = if let Ok(uid) = uuid::Uuid::parse_str(&target) {
+             Some(uid)
+        } else {
+             self.peer_manager.get_peer_id_by_name(&target)
+        };
+
+        if let Some(id) = peer_id {
+            info!("Sending Flush command to peer {}", id);
+            let msg = Message::Flush;
+            self.peer_manager.send_to_peer(id, &msg).await?;
+            Ok(())
+        } else {
+            anyhow::bail!("Peer '{}' not found", target);
         }
     }
 }

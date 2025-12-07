@@ -45,6 +45,16 @@ pub enum SdkCommand {
     StreamStart { size_hint: Option<u64> },
     StreamChunk { stream_id: u64, chunk_seq: u32, #[serde(with = "serde_bytes")] data: Vec<u8> },
     StreamFinish { stream_id: u64 },
+    Flush { target: Option<String> },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PeerMetadata {
+    pub id: String,
+    pub name: String,
+    pub addr: String,
+    pub total_memory: u64,
+    pub used_memory: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -54,9 +64,11 @@ pub enum SdkResponse {
     Loaded { #[serde(with = "serde_bytes")] data: Vec<u8> },
     Success,
     List { items: Vec<String> },
+    PeerList { peers: Vec<PeerMetadata> },
     Error { msg: String },
     Status { blocks: usize, peers: usize, memory_usage: usize },
     StreamStarted { stream_id: u64 },
+    FlushSuccess,
 }
 
 pub struct MemCloudClient {
@@ -127,10 +139,20 @@ impl MemCloudClient {
         }
     }
     
-    pub async fn list_peers(&mut self) -> Result<Vec<String>> {
+    pub async fn list_peers(&mut self) -> Result<Vec<PeerMetadata>> {
         let cmd = SdkCommand::ListPeers;
         match self.send_command(cmd).await? {
-            SdkResponse::List { items } => Ok(items),
+            SdkResponse::PeerList { peers } => Ok(peers),
+            // Fallback for older nodes? No versioning yet.
+            SdkResponse::List { items } => {
+                // mock convert? or error?
+                // Assuming version alignment. 
+                // But if we encounter List, it means old node.
+                // Converting string list to metadata is hard because we lack stats/id separation in string?
+                // String was "ID (Name) @ Addr". We could parse it.
+                // Let's iterate and parse if needed, later. For now, assume matching version.
+                anyhow::bail!("Received legacy peer list format")
+            },
             SdkResponse::Error { msg } => anyhow::bail!(msg),
             _ => anyhow::bail!("Unexpected response"),
         }
@@ -177,6 +199,15 @@ impl MemCloudClient {
         let cmd = SdkCommand::Stat;
         match self.send_command(cmd).await? {
             SdkResponse::Status { blocks, peers, memory_usage } => Ok((blocks, peers, memory_usage)),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response"),
+        }
+    }
+
+    pub async fn flush(&mut self, target: Option<String>) -> Result<()> {
+        let cmd = SdkCommand::Flush { target };
+        match self.send_command(cmd).await? {
+            SdkResponse::FlushSuccess => Ok(()),
             SdkResponse::Error { msg } => anyhow::bail!(msg),
             _ => anyhow::bail!("Unexpected response"),
         }

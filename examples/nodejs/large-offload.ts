@@ -3,7 +3,7 @@ import { MemCloud } from 'memcloud';
 import { Buffer } from 'buffer';
 
 const cloud = new MemCloud();
-const SIZE_MB = 500;
+const SIZE_MB = 20;
 const SIZE_BYTES = SIZE_MB * 1024 * 1024;
 
 async function main() {

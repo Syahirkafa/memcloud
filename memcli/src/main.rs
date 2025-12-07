@@ -97,6 +97,15 @@ enum Commands {
         #[arg(short, long)]
         follow: bool,
     },
+    /// Flush all data from the node (Dangerous!)
+    Flush {
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        force: bool,
+        /// Optional: Flush specific peer (by name or ID) instead of local
+        #[arg(long)]
+        peer: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -311,10 +320,7 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
              if peers.is_empty() {
                  println!("No peers connected.");
              } else {
-                 println!("Connected Peers:");
-                 for p in peers {
-                     println!("- {}", p);
-                 }
+                 print_peers_table(&peers);
              }
         }
         Commands::Connect { addr } => {
@@ -363,10 +369,120 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
             // Currently RPC doesn't have a version method.
             // For now, simple client version is enough.
         }
+            // For now, simple client version is enough.
+        }
+        Commands::Flush { force, peer } => {
+            let target_desc = peer.clone().unwrap_or_else(|| "LOCAL node".to_string());
+
+            if !force {
+                println!("⚠️  WARNING: This will delete ALL data stored on the {}.", target_desc);
+                print!("   Are you sure? [y/N]: ");
+                io::stdout().flush()?;
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                if input.trim().to_lowercase() != "y" {
+                    println!("❌ Aborted.");
+                    return Ok(());
+                }
+            }
+            
+            println!("🧹 Flushing memory on {}...", target_desc);
+            client.flush(peer).await?;
+            println!("✅ Memory flushed.");
+        }
     }
     Ok(())
 }
 
 fn target_peer_string(peer: Option<String>) -> Option<String> {
     peer
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+fn print_peers_table(peers: &[memsdk::PeerMetadata]) {
+    // 1. Calculate column widths
+    // Header
+    let h_node = "Node";
+    let h_addr = "Address";
+    let h_ram = "RAM";
+    
+    // Min widths
+    let mut w_node = h_node.len();
+    let mut w_addr = h_addr.len();
+    let mut w_ram = h_ram.len();
+
+    // Scan data
+    for p in peers {
+        w_node = w_node.max(p.name.len());
+        w_addr = w_addr.max(p.addr.len());
+        w_ram = w_ram.max(format_bytes(p.total_memory).len());
+    }
+
+    // Padding
+    w_node += 2; // " Name "
+    w_addr += 2;
+    w_ram += 2;
+
+    // Helper to print separator
+    let print_sep = |start: &str, mid: &str, end: &str, line: &str| {
+        print!("{}", start);
+        print!("{}", line.repeat(w_node));
+        print!("{}", mid);
+        print!("{}", line.repeat(w_addr));
+        print!("{}", mid);
+        print!("{}", line.repeat(w_ram));
+        println!("{}", end);
+    };
+
+    // Helper to print row
+    let print_row = |n: &str, a: &str, r: &str| {
+        println!("│ {:<w_node$} │ {:<w_addr$} │ {:<w_ram$} │", 
+            n, a, r, 
+            w_node=w_node - 2, 
+            w_addr=w_addr - 2, 
+            w_ram=w_ram - 2); // -2 for parsing inside padding?
+            // Actually alignment in println is tricky with dynamic width expressions inside format string in older rust 
+            // but {:<width$} works. The width includes the padding spaces if I manually put them.
+            // Let's just use manual spacing or the format string carefully.
+    };
+    
+    // Top
+    print_sep("┌", "┬", "┐", "─");
+
+    // Header
+    // println!("│ {:<wn$} │ {:<wa$} │ {:<wr$} │", h_node, h_addr, h_ram, wn=w_node-2, wa=w_addr-2, wr=w_ram-2); -> No, manual padding easiest
+    println!("│ {:<width_n$} │ {:<width_a$} │ {:<width_r$} │", 
+             h_node, h_addr, h_ram, 
+             width_n = w_node-2, width_a = w_addr-2, width_r = w_ram-2);
+
+    // Mid
+    print_sep("├", "┼", "┤", "─");
+
+    // Rows
+    let mut total_ram = 0;
+    for p in peers {
+        let ram = format_bytes(p.total_memory);
+        total_ram += p.total_memory;
+        println!("│ {:<width_n$} │ {:<width_a$} │ {:<width_r$} │", 
+                 p.name, p.addr, ram, 
+                 width_n = w_node-2, width_a = w_addr-2, width_r = w_ram-2);
+    }
+
+    // Bottom
+    print_sep("└", "┴", "┘", "─");
+
+    println!("\n📊 Total pooled RAM: {}", format_bytes(total_ram));
 }
