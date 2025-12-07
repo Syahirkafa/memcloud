@@ -107,23 +107,41 @@ main();
 
 ## 🏗️ Architecture
 ```mermaid
-graph TD
-    subgraph Local_Machine [Local Machine]
-        CLI[MemCLI] -->|Unix Socket| Node[MemNode Daemon]
-        SDK[JS SDK] -->|Unix Socket| Node
-        Node -->|In-Memory| Storage[(RAM Storage)]
+flowchart TD
+
+    subgraph AppLayer[Application Layer]
+        CLI[MemCLI (optional)]
+        SDK[JS / Python / Rust SDK]
     end
 
-    subgraph LAN_Network [LAN Network]
-        Node -->|mDNS Broadcast| Discovery[Service Discovery]
-        Discovery -->|Found| Peer[Remote Peer Node]
-        Node <-->|TCP / JSON-RPC| Peer
+    subgraph LocalDaemon[MemCloud Daemon (Local Device)]
+        RPC[Local RPC API\n(Unix Socket / TCP)]
+        BlockMgr[Block Manager\n(Store/Load/Free)]
+        PeerMgr[Peer Manager\n(Connections & Routing)]
+        RAM[(Local RAM Cache)]
+        Discovery[mDNS Discovery]
     end
 
-    style Local_Machine fill:#f9f,stroke:#333,stroke-width:2px,color:black
-    style LAN_Network fill:#dfd,stroke:#333,stroke-width:2px,color:black
-    style Node fill:#bbf,stroke:#333,stroke-width:2px,color:black
-    style Storage fill:#ff9,stroke:#333,stroke-width:2px,color:black
+    subgraph RemoteDevice[Remote Device(s)]
+        RemoteDaemon[Remote MemCloud Daemon]
+        RemoteRAM[(Remote RAM Storage)]
+    end
+
+    %% Connections inside local device
+    CLI --> RPC
+    SDK --> RPC
+
+    RPC --> BlockMgr
+    BlockMgr --> RAM
+    BlockMgr --> PeerMgr
+    PeerMgr --> Discovery
+
+    %% Connections across network
+    Discovery --> RemoteDaemon
+    PeerMgr <-->|TCP / Binary RPC| RemoteDaemon
+
+    %% Remote relationships
+    RemoteDaemon --> RemoteRAM
 ```
 1.  **MemNode**: The core daemon running on each machine. It handles storage, networking, and discovery.
 - `memsdk/`: Rust & C SDK Library.
