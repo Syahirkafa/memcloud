@@ -1,6 +1,6 @@
 interface BadgeProps {
   children: React.ReactNode;
-  variant?: "default" | "outline";
+  variant?: "default" | "outline" | "secondary";
   className?: string;
 }
 
@@ -9,6 +9,7 @@ export const Badge = ({ children, variant = "default", className = "" }: BadgePr
   const variants = {
     default: "bg-primary/10 text-primary border border-primary/20",
     outline: "bg-transparent text-muted-foreground border border-border",
+    secondary: "bg-secondary text-secondary-foreground border border-secondary",
   };
 
   return <span className={`${baseStyles} ${variants[variant]} ${className}`}>{children}</span>;

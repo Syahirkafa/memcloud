@@ -8,6 +8,7 @@ import {
   Terminal as TerminalIcon,
   WifiOff,
   Github,
+  Star,
   ExternalLink,
   ArrowRight
 } from "lucide-react";
@@ -113,8 +114,13 @@ const Index = () => {
               className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               <Github className="w-4 h-4" />
-              <span className="hidden sm:inline">
-                GitHub {starCount !== null ? `(${starCount} ★)` : ""}
+              <span className="hidden sm:inline flex items-center gap-1">
+                GitHub
+                {starCount !== null && (
+                  <span className="text-yellow-500 font-semibold ml-1">
+                    ★ {starCount}
+                  </span>
+                )}
               </span>
             </a>
             <a
@@ -139,6 +145,12 @@ const Index = () => {
               Rust-Powered
             </Badge>
             <Badge variant="outline">MIT License</Badge>
+            {starCount !== null && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                {starCount} Stars
+              </Badge>
+            )}
           </div>
 
           <h1 className="text-4xl md:text-6xl font-bold mb-6 animate-fade-in-up">
