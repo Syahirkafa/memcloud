@@ -1,4 +1,5 @@
 import { TermDefinition } from "@/components/TermDefinition";
+import { useState, useEffect } from "react";
 import {
   Cloud,
   Zap,
@@ -70,6 +71,19 @@ const codeExample = `import { MemCloud } from 'memcloud';
  cloud.close();`;
 
 const Index = () => {
+  const [starCount, setStarCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("https://api.github.com/repos/vibhanshu2001/memcloud")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.stargazers_count) {
+          setStarCount(data.stargazers_count);
+        }
+      })
+      .catch((err) => console.error("Failed to fetch GitHub stars:", err));
+  }, []);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Background gradient */}
@@ -99,7 +113,9 @@ const Index = () => {
               className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               <Github className="w-4 h-4" />
-              <span className="hidden sm:inline">GitHub</span>
+              <span className="hidden sm:inline">
+                GitHub {starCount !== null ? `(${starCount} ★)` : ""}
+              </span>
             </a>
             <a
               href="https://www.npmjs.com/package/memcloud"
