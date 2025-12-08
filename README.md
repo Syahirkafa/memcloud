@@ -5,10 +5,84 @@
 ![Status](https://img.shields.io/badge/status-alpha-red)
 [![NPM](https://img.shields.io/npm/v/memcloud)](https://www.npmjs.com/package/memcloud)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/vibhanshu2001/memcloud/release.yml?label=Release%20Build)](https://github.com/vibhanshu2001/memcloud/actions)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
 **MemCloud** is a distributed in-memory data store written in Rust. It allows nodes (such as macOS and Linux machines) on a local network to pool their RAM, creating a shared, ephemeral storage cloud.
 
 > *"Turning nearby devices into your personal RAM farm."*
+
+---
+
+## 📚 Table of Contents
+
+- [Key Features](#-key-features)
+- [Why MemCloud?](#-why-memcloud)
+- [Quick Start](#-quick-start)
+- [Roadmap](#-roadmap)
+- [Architecture](#-architecture)
+- [Comparison](#-comparison)
+- [Installation](#-installation)
+- [Usage (CLI)](#-usage)
+- [Usage (JS SDK)](#-5-js-sdk-usage)
+- [Distribution](#-distribution--publishing)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+---
+
+## 💡 Why MemCloud?
+
+**Problem**: You have 32GB RAM on your laptop, but your local Node.js script crashes with OOM because it's processing a 2GB log file and trying to buffer it. Meanwhile, your idle desktop next to you has 64GB RAM doing nothing.
+
+**Solution**: MemCloud lets you treat that idle desktop's RAM as an extension of your own. It's not just a cache; it's a way to **offload memory pressure** from your active development machine to other devices on your local network.
+
+**Use Cases**:
+*   **Distributed Local Caching**: Share build artifacts or ML model weights across your team's devices on the same LAN.
+*   **"Infinite" RAM Streams**: Stream gigabytes of data to a peer node for temporary storage, keeping your local process footprint tiny.
+*   **Ephemeral scratchpad**: Quick, zero-config storage that disappears when you reboot (perfect for dev/test data).
+
+---
+
+## 🚀 Quick Start
+
+### 1. Install & Start
+```bash
+# Install on all your machines
+curl -fsSL https://raw.githubusercontent.com/vibhanshu2001/memcloud/main/install.sh | sh
+
+# Start the node (it automatically finds peers via mDNS)
+memcli node start --name "MyDevice"
+```
+
+### 2. Store Data (Rust & CLI)
+```bash
+# Simple Key-Value
+memcli set "greeting" "Hello from MemCloud!"
+# -> Set 'greeting' (Block ID: 882211)
+
+memcli get "greeting"
+# -> "Hello from MemCloud!"
+```
+
+### 3. Usage (JavaScript/TypeScript)
+```typescript
+import { MemCloud } from 'memcloud';
+
+const cloud = new MemCloud();
+await cloud.connect();
+
+// 1. Store
+await cloud.set("user:123", JSON.stringify({ name: "Alice", role: "admin" }));
+
+// 2. Get
+const user = await cloud.get("user:123");
+console.log(JSON.parse(user.toString())); 
+
+// 3. Offload Stream (Zero RAM usage on client)
+const hugeFile = fs.createReadStream('./huge.log');
+const handle = await cloud.storeStream(hugeFile);
+```
 
 ---
 
@@ -44,7 +118,7 @@
 
 ## 🏗️ Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed diagrams and data flow.
+See [docs/architecture.md](./docs/architecture.md) for detailed diagrams and data flow.
 
 ```mermaid
 flowchart TD
@@ -335,6 +409,17 @@ We support generating `.deb` packages via `cargo-deb`:
    ```
    *Note: Installing `memnode` automatically sets up the systemd service.*
 
+
+## 🤝 Contributing
+
+We love plugins, bug fixes, and feature requests!
+Please read our [CONTRIBUTING.md](./CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+1.  Fork the Project
+2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3.  Commit your Changes (`git commit -m 'feat: Add some AmazingFeature'`)
+4.  Push to the Branch (`git push origin feature/AmazingFeature`)
+5.  Open a Pull Request
 
 ## License
 MIT

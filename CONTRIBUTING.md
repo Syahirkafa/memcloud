@@ -108,7 +108,14 @@ cargo clippy --workspace
 
 - **Rust**: Follow the standard Rust style guide (`cargo fmt`)
 - **TypeScript**: Use Prettier with default settings
-- **Commits**: Use conventional commits when possible (`feat:`, `fix:`, `docs:`)
+- **Commits**: We follow the **Conventional Commits** specification.
+  - `feat: allow provided config object to extend other configs`
+  - `fix: array parsing issue when multiple spaces were contained in string`
+  - `docs: correct spelling of CHANGELOG`
+  - `style: add missing semicolons`
+  - `refactor: restructure block manager`
+  - `test: add unit tests for peer discovery`
+  - `chore: update dependencies`
 
 ---
 
