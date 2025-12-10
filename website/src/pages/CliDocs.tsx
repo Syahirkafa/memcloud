@@ -40,7 +40,8 @@ const CliDocs = () => {
             subItems: [
                 { id: "peer-connect", title: "Connect" },
                 { id: "peer-list", title: "List Peers" },
-                { id: "peer-update", title: "Update Quota" }
+                { id: "peer-update", title: "Update Quota" },
+                { id: "peer-disconnect", title: "Disconnect" }
             ]
         },
         {
@@ -269,19 +270,25 @@ const CliDocs = () => {
                         <h3 id="peer-connect" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Connect to a Peer</h3>
                         <CommandBlock
                             command='memcli connect <ADDR> --quota "1gb"'
-                            description="Initiate a connection to a known peer IP. The --quota flag is optional and limits how much of YOUR memory they can use."
+                            description="Initiate a connection. Omit --quota to use interactive mode. Supports 4-way mTLS-like handshake."
                         />
 
                         <h3 id="peer-list" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">List Active Peers</h3>
                         <CommandBlock
                             command="memcli peer list"
-                            description="Show a table of all authenticated peers, their current status, and bandwidth usage."
+                            description="Show a table of all authenticated peers, their Node Name, stats, and RAM usage."
                         />
 
                         <h3 id="peer-update" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Update Peer Limits (Live)</h3>
                         <CommandBlock
                             command='memcli peer update <ID_OR_NAME> --quota "512mb"'
-                            description="Dynamically adjust the memory quota for a connected peer without disconnecting. Useful for throttling resource usage."
+                            description="Dynamically adjust the memory quota for a connected peer by Name or ID."
+                        />
+
+                        <h3 id="peer-disconnect" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Disconnect Peer</h3>
+                        <CommandBlock
+                            command='memcli peer disconnect <ID_OR_NAME>'
+                            description="Gracefully close the secure session with a specific peer."
                         />
                     </section>
 

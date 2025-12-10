@@ -326,14 +326,17 @@ memcli load 123456789
 # List all connected peers
 memcli peer list
 
-# Connect with custom RAM quota (e.g., offer only 512MB)
+# Connect (Interactive Mode - prompts for Quota)
+memcli connect <IP>:8080
+
+# Connect with manual RAM quota (non-interactive)
 memcli connect <IP>:8080 --quota "512mb"
 
-# Update an active peer's quota (Live)
-memcli peer update <PEER_ID> --quota "1gb"
+# Update an active peer's quota (Live) - supports Name or ID
+memcli peer update <NAME_OR_ID> --quota "1gb"
 
 # Disconnect from a peer
-memcli peer disconnect <PEER_ID>
+memcli peer disconnect <NAME_OR_ID>
 ```
 
 **Show Stats:**

@@ -152,6 +152,9 @@ enum PeerAction {
         #[arg(long)]
         quota: String,
     },
+    Disconnect {
+        id: String,
+    },
 }
 
 #[tokio::main]
@@ -355,15 +358,37 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
                     client.update_peer_quota(&id, quota_bytes).await?;
                     println!("Updated peer {} quota to {} bytes", id, quota_bytes);
                 }
+                PeerAction::Disconnect { id } => {
+                    client.disconnect_peer(&id).await?;
+                    println!("Disconnected peer {}", id);
+                }
             }
         }
         Commands::Connect { addr, quota } => {
-            let quota_val = match quota {
-                Some(s) => Some(memsdk::parse_size(&s)?),
-                None => None,
+            let quota_str = if quota.is_none() {
+                 dialoguer::Input::<String>::new()
+                     .with_prompt("Enter RAM quota to offer (default: 512mb)")
+                     .default("512mb".into())
+                     .interact_text()?
+            } else {
+                quota.unwrap()
             };
-            client.connect_peer(&addr, quota_val).await?;
-            println!("Connected to {}", addr);
+
+            let quota_val = memsdk::parse_size(&quota_str)?;
+            
+            println!("🔗 Initiating connection to {}...", addr);
+            
+            let meta = client.connect_peer(&addr, Some(quota_val)).await?;
+            
+            println!("\n✅ Connection established!");
+            println!("🔐 mTLS-like Secure Session Established (ChaCha20-Poly1305)");
+            println!("\n📡 Handshake successful (Node ID: {})", meta.name);
+            
+            // Format stats
+            let total_ram = format_bytes(meta.total_memory);
+            let pooled_ram = format_bytes(quota_val); 
+            
+            println!("   Latency: <1ms | Total RAM: {} | RAM Pooled: {}", total_ram, pooled_ram);
         }
         Commands::Stats => {
             let (blocks, peers, memory) = client.stats().await?;

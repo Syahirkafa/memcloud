@@ -61,25 +61,47 @@ impl PeerManager {
         self.identity.clone()
     }
     
-    pub async fn add_discovered_peer(&self, id: Uuid, addr: SocketAddr, block_manager: Arc<crate::blocks::InMemoryBlockManager>, peer_manager: Arc<PeerManager>, ram_quota: u64) -> Result<()> {
-        if self.peers.contains_key(&id) {
-            return Ok(());
+    pub fn get_total_system_memory(&self) -> u64 {
+        sys_info::mem_info().map(|m| m.total * 1024).unwrap_or(0)
+    }
+    
+    pub async fn add_discovered_peer(&self, id: Uuid, addr: SocketAddr, block_manager: Arc<crate::blocks::InMemoryBlockManager>, peer_manager: Arc<PeerManager>, ram_quota: u64) -> Result<PeerMetadata> { 
+        // NOTE: Updated return type to include Metadata!
+        
+        if let Some(entry) = self.peers.get(&id) {
+             return Ok(PeerMetadata {
+                 id: entry.key().to_string(),
+                 name: entry.value().name.clone(),
+                 addr: entry.value().addr.to_string(),
+                 total_memory: entry.value().total_memory,
+                 used_memory: entry.value().used_memory,
+             });
         }
 
         // Check if we are already connected to this address (avoid duplicates)
         for entry in self.peers.iter() {
             if entry.value().addr == addr {
                 info!("Already connected to peer at {}", addr);
-                return Ok(());
+                // Return that peer's metadata
+                return Ok(PeerMetadata {
+                    id: entry.key().to_string(),
+                    name: entry.value().name.clone(),
+                    addr: entry.value().addr.to_string(),
+                    total_memory: entry.value().total_memory,
+                    used_memory: entry.value().used_memory,
+                });
             }
         }
 
         info!("Connecting to peer {} at {}", id, addr);
-        match TcpStream::connect(addr).await {
+        let stream_res = TcpStream::connect(addr).await;
+        match stream_res {
             Ok(mut stream) => {
                 info!("Connected TCP to {}, starting handshake...", id);
                 
-                match handshake_initiator(&mut stream, &self.identity, ram_quota).await {
+                let sys_mem = self.get_total_system_memory();
+                
+                match handshake_initiator(&mut stream, &self.identity, ram_quota, sys_mem).await {
                     Ok(session) => {
                         info!("Handshake success with {}. Negotiated encryption.", session.peer_name);
                         
@@ -91,104 +113,65 @@ impl PeerManager {
                         
                         let writer_arc = Arc::new(tokio::sync::Mutex::new(secure_writer));
 
+                        let peer_id = session.peer_id; // Use ID from session (since original 'id' might be nil if manual)
+
                         let peer_info = PeerInfo {
-                            id,
+                            id: peer_id,
                             addr,
-                            name: session.peer_name,
-                            total_memory: 0, 
+                            name: session.peer_name.clone(),
+                            total_memory: session.peer_total_memory, 
                             used_memory: 0,
                             ram_quota, 
                             remote_used_storage: 0,
                             connection: Some(writer_arc.clone()),
                         };
                         
-                        self.peers.insert(id, peer_info);
+                        // We must insert using peer_id from session (actual peer UUID)
+                        self.peers.insert(peer_id, peer_info);
                         
                         use crate::net::handle_connection_split;
                         tokio::spawn(async move {
-                            if let Err(e) = handle_connection_split(secure_reader, writer_arc, addr, id, block_manager, peer_manager).await {
+                            if let Err(e) = handle_connection_split(secure_reader, writer_arc, addr, peer_id, block_manager, peer_manager).await {
                                 error!("Connection error (outgoing) to {}: {}", addr, e);
                             }
                         });
                         
+                        Ok(PeerMetadata {
+                            id: peer_id.to_string(),
+                            name: session.peer_name,
+                            addr: addr.to_string(),
+                            total_memory: session.peer_total_memory,
+                            used_memory: 0
+                        })
                     }
                     Err(e) => {
                          error!("Handshake failed with {}: {}", addr, e);
-                         return Err(e);
+                         Err(e)
                     }
                 }
             }
             Err(e) => {
                 error!("Failed to connect to peer {}: {}", id, e);
+                Err(e.into())
             }
         }
-        Ok(())
     }
 
-    pub fn get_peer_id_by_name(&self, name_query: &str) -> Option<Uuid> {
-        for item in self.peers.iter() {
-            if item.value().name.contains(name_query) || item.value().name == name_query {
-                return Some(*item.key());
-            }
-        }
-        None
-    }
+    // ...
 
-
-    pub async fn get_available_peer(&self) -> Option<Uuid> {
-        for item in self.peers.iter() {
-            if item.value().connection.is_some() {
-                return Some(*item.key());
-            }
-        }
-        None
-    }
-
-    pub async fn send_to_peer(&self, peer_id: Uuid, msg: &Message) -> Result<()> {
-        if let Some(peer) = self.peers.get(&peer_id) {
-            if let Some(conn) = &peer.connection {
-                let mut writer = conn.lock().await;
-                // Serialize message
-                let data = bincode::serialize(msg)?;
-                // Send Frame
-                writer.send_frame(&data).await?;
-                return Ok(());
-            }
-        }
-        anyhow::bail!("Peer not connected")
-    }
-
-    pub fn get_peer_metadata_list(&self) -> Vec<PeerMetadata> {
-        self.peers.iter()
-            .map(|kv| PeerMetadata {
-                id: kv.key().to_string(),
-                name: kv.value().name.clone(),
-                addr: kv.value().addr.to_string(),
-                total_memory: kv.value().total_memory,
-                used_memory: kv.value().used_memory,
-            })
-            .collect()
-    }
-    
-    pub fn list_peers(&self) -> Vec<String> {
-        self.peers.iter()
-            .map(|kv| format!("{} ({}) @ {}", kv.key(), kv.value().name, kv.value().addr))
-            .collect()
-    }
-
-    pub async fn manual_connect(&self, addr_str: &str, block_manager: Arc<crate::blocks::InMemoryBlockManager>, peer_manager: Arc<PeerManager>, ram_quota: u64) -> Result<()> {
+    pub async fn manual_connect(&self, addr_str: &str, block_manager: Arc<crate::blocks::InMemoryBlockManager>, peer_manager: Arc<PeerManager>, ram_quota: u64) -> Result<PeerMetadata> {
         let addr: SocketAddr = addr_str.parse()?;
-        let id_placeholder = Uuid::new_v4(); 
+        let id_placeholder = Uuid::nil();  // Use nil, we will get actual ID from handshake
         self.add_discovered_peer(id_placeholder, addr, block_manager, peer_manager, ram_quota).await
     }
     
     // Call from TransportServer after accepting an incoming authenticated connection
-    pub fn register_authenticated_peer(&self, id: Uuid, addr: SocketAddr, name: String, connection: Arc<tokio::sync::Mutex<SecureWriter>>, quota: u64) {
+    pub fn register_authenticated_peer(&self, id: Uuid, addr: SocketAddr, name: String, connection: Arc<tokio::sync::Mutex<SecureWriter>>, quota: u64, total_memory: u64) {
          let info = PeerInfo {
              id, 
              addr,
              name,
-              total_memory: 0,
+              total_memory,
               used_memory: 0,
               ram_quota: quota, 
               remote_used_storage: 0,

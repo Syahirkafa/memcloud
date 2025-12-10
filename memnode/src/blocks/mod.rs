@@ -92,8 +92,22 @@ impl InMemoryBlockManager {
         self.peer_manager.get_peer_metadata_list()
     }
 
-    pub async fn connect_peer(&self, addr: &str, block_manager: Arc<InMemoryBlockManager>, quota: u64) -> Result<()> {
+    pub async fn connect_peer(&self, addr: &str, block_manager: Arc<InMemoryBlockManager>, quota: u64) -> Result<crate::peers::PeerMetadata> {
         self.peer_manager.manual_connect(addr, block_manager, self.peer_manager.clone(), quota).await
+    }
+    
+    pub fn disconnect_peer(&self, target: &str) -> Result<bool> {
+         let peer_id = if let Ok(uid) = uuid::Uuid::parse_str(target) {
+              Some(uid)
+         } else {
+              self.peer_manager.get_peer_id_by_name(target)
+         };
+         
+         if let Some(id) = peer_id {
+             Ok(self.peer_manager.disconnect_peer(id))
+         } else {
+             Ok(false)
+         }
     }
 
     pub async fn update_peer_quota(&self, target: &str, quota: u64) -> Result<()> {

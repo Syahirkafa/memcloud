@@ -58,6 +58,7 @@ pub enum SdkCommand {
     ListPeers,
     Connect { addr: String, quota: Option<u64> },
     UpdatePeerQuota { peer_id: String, quota: u64 },
+    Disconnect { peer_id: String },
     Set { key: String, #[serde(with = "serde_bytes")] data: Vec<u8> },
     Get { key: String },
     ListKeys { pattern: String },
@@ -85,6 +86,7 @@ pub enum SdkResponse {
     Success,
     List { items: Vec<String> },
     PeerList { peers: Vec<PeerMetadata> },
+    PeerConnected { metadata: PeerMetadata },
     Error { msg: String },
     Status { blocks: usize, peers: usize, memory_usage: usize },
     StreamStarted { stream_id: u64 },
@@ -178,12 +180,21 @@ impl MemCloudClient {
         }
     }
 
-    pub async fn connect_peer(&mut self, addr: &str, quota: Option<u64>) -> Result<()> {
+    pub async fn connect_peer(&mut self, addr: &str, quota: Option<u64>) -> Result<PeerMetadata> {
          let cmd = SdkCommand::Connect { addr: addr.to_string(), quota };
          match self.send_command(cmd).await? {
-            SdkResponse::Success => Ok(()),
+            SdkResponse::PeerConnected { metadata } => Ok(metadata),
             SdkResponse::Error { msg } => anyhow::bail!(msg),
-            _ => anyhow::bail!("Unexpected response"),
+            _ => anyhow::bail!("Unexpected response to Connect"),
+        }
+    }
+    
+    pub async fn disconnect_peer(&mut self, peer_id: &str) -> Result<()> {
+        let cmd = SdkCommand::Disconnect { peer_id: peer_id.to_string() };
+        match self.send_command(cmd).await? {
+             SdkResponse::Success => Ok(()),
+             SdkResponse::Error { msg } => anyhow::bail!(msg),
+             _ => anyhow::bail!("Unexpected response to Disconnect"),
         }
     }
 

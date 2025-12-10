@@ -38,6 +38,7 @@ pub enum SdkCommand {
     ListPeers,
     Connect { addr: String, quota: Option<u64> },
     UpdatePeerQuota { peer_id: String, quota: u64 },
+    Disconnect { peer_id: String },
     // New KV commands
     Set { key: String, #[serde(with = "serde_bytes")] data: Vec<u8> },
     Get { key: String },
@@ -59,6 +60,7 @@ pub enum SdkResponse {
     Success,
     List { items: Vec<String> }, // Keep for keys
     PeerList { peers: Vec<crate::peers::PeerMetadata> },
+    PeerConnected { metadata: crate::peers::PeerMetadata },
     Error { msg: String },
     // Stat response
     Status {
@@ -181,7 +183,7 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
             }
             SdkCommand::Connect { addr, quota } => {
                 match block_manager.connect_peer(&addr, block_manager.clone(), quota.unwrap_or(0)).await {
-                    Ok(_) => SdkResponse::Success,
+                    Ok(meta) => SdkResponse::PeerConnected { metadata: meta },
                     Err(e) => SdkResponse::Error { msg: e.to_string() },
                 }
             }
@@ -194,6 +196,13 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                          Err(e) => SdkResponse::Error { msg: e.to_string() },
                      }
                  }
+            }
+            SdkCommand::Disconnect { peer_id } => {
+                match block_manager.disconnect_peer(&peer_id) {
+                     Ok(true) => SdkResponse::Success,
+                     Ok(false) => SdkResponse::Error { msg: "Peer not found".to_string() },
+                     Err(e) => SdkResponse::Error { msg: e.to_string() },
+                }
             }
             SdkCommand::Set { key, data } => {
                  let id = rand::random::<u64>();

@@ -24,6 +24,7 @@ pub struct AuthHello {
     pub nonce: [u8; 32],
     pub name: String,
     pub ram_quota: u64,
+    pub total_memory: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,6 +32,10 @@ pub struct AuthChallenge {
     pub pub_key: [u8; 32], // Ed25519 (Responder's)
     pub nonce: [u8; 32],
     pub challenge: [u8; 32],
+    pub node_id: Uuid,
+    pub name: String,
+    pub ram_quota: u64,
+    pub total_memory: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -74,6 +79,7 @@ pub struct Session {
     pub peer_id: Uuid,
     pub peer_name: String,
     pub peer_quota: u64,
+    pub peer_total_memory: u64,
 }
 
 // Handshake Logic
@@ -82,6 +88,7 @@ pub async fn handshake_initiator(
     stream: &mut TcpStream,
     identity: &Identity,
     ram_quota: u64,
+    total_memory: u64,
 ) -> Result<Session> {
     let mut csprng = OsRng;
     
@@ -94,13 +101,14 @@ pub async fn handshake_initiator(
         nonce: nonce_a,
         name: identity.name.clone(),
         ram_quota,
+        total_memory,
     });
     send_msg(stream, &hello).await?;
 
     // 2. Expect Challenge
     let challenge_msg = recv_msg(stream).await?;
-    let (nonce_b, challenge, _pub_key_b) = match challenge_msg {
-        HandshakeMessage::Challenge(c) => (c.nonce, c.challenge, c.pub_key),
+    let (nonce_b, challenge, _pub_key_b, peer_id, peer_name, peer_quota, peer_total_memory) = match challenge_msg {
+        HandshakeMessage::Challenge(c) => (c.nonce, c.challenge, c.pub_key, c.node_id, c.name, c.ram_quota, c.total_memory),
         _ => bail!("Expected AuthChallenge, got {:?}", challenge_msg),
     };
 
@@ -148,28 +156,29 @@ pub async fn handshake_initiator(
     hasher_recv.update(session_key.as_bytes());
     hasher_recv.update(b"responder_to_initiator");
     let recv_key = hasher_recv.finalize();
-
-    let peer_id = Uuid::nil(); 
     
     Ok(Session {
         send_key: *send_key.as_bytes(),
         recv_key: *recv_key.as_bytes(),
         peer_id,
-        peer_name: "Unknown".to_string(), 
-        peer_quota: 0, 
+        peer_name, 
+        peer_quota, 
+        peer_total_memory,
     })
 }
 
 pub async fn handshake_responder(
     stream: &mut TcpStream,
     identity: &Identity,
+    ram_quota: u64,
+    total_memory: u64,
 ) -> Result<Session> {
     let mut csprng = OsRng;
 
     // 1. Expect Hello
     let hello_msg = recv_msg(stream).await?;
-    let (nonce_a, pub_key_a_bytes, peer_id, peer_name, peer_quota) = match hello_msg {
-        HandshakeMessage::Hello(h) => (h.nonce, h.pub_key, h.node_id, h.name, h.ram_quota),
+    let (nonce_a, pub_key_a_bytes, peer_id, peer_name, peer_quota, peer_total_memory) = match hello_msg {
+        HandshakeMessage::Hello(h) => (h.nonce, h.pub_key, h.node_id, h.name, h.ram_quota, h.total_memory),
         _ => bail!("Expected AuthHello, got {:?}", hello_msg),
     };
     
@@ -184,6 +193,10 @@ pub async fn handshake_responder(
         pub_key: identity.public_key().to_bytes(),
         nonce: nonce_b,
         challenge,
+        node_id: identity.node_id,
+        name: identity.name.clone(),
+        ram_quota,
+        total_memory,
     });
     send_msg(stream, &challenge_pkt).await?;
     
@@ -235,6 +248,7 @@ pub async fn handshake_responder(
         peer_id,
         peer_name,
         peer_quota,
+        peer_total_memory,
     })
 }
 

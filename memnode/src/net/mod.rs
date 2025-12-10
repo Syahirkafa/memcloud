@@ -89,7 +89,10 @@ impl TransportServer {
                          let identity = pm.get_identity();
                          info!("Starting handshake with {}", addr);
                          
-                         match auth::handshake_responder(&mut stream, &identity).await {
+                         let sys_mem = pm.get_total_system_memory();
+                         let my_quota = bm.get_max_memory();
+                         
+                         match auth::handshake_responder(&mut stream, &identity, my_quota, sys_mem).await {
                              Ok(session) => {
                                  info!("Handshake accepted from {} ({}). Negotiated secure session.", session.peer_name, session.peer_id);
                                  
@@ -99,7 +102,7 @@ impl TransportServer {
                                  
                                  let writer_arc = Arc::new(tokio::sync::Mutex::new(secure_writer));
                                  
-                                 pm.register_authenticated_peer(session.peer_id, addr, session.peer_name, writer_arc.clone(), session.peer_quota);
+                                 pm.register_authenticated_peer(session.peer_id, addr, session.peer_name, writer_arc.clone(), session.peer_quota, session.peer_total_memory);
                                  
                                  if let Err(e) = handle_connection_split(secure_reader, writer_arc, addr, session.peer_id, bm, pm).await {
                                      error!("Connection error from {}: {}", addr, e);

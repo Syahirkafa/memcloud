@@ -8,6 +8,8 @@ memsdk = { path = "../memsdk" }
 clap = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
+dialoguer = "0.10"
+console = "0.15"
 log = { workspace = true }
 env_logger = { workspace = true }
 nix = { version = "0.29", features = ["signal", "process"] }
