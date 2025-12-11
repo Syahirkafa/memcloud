@@ -133,7 +133,11 @@ pub async fn handshake_initiator(
     let ciphertext_a = cipher.encrypt(nonce, auth_a_bytes.as_ref())
         .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))?;
         
-    send_msg(stream, &HandshakeMessage::Auth(ciphertext_a.clone())).await?;
+    let auth_msg_out = HandshakeMessage::Auth(ciphertext_a.clone());
+    send_msg(stream, &auth_msg_out).await?;
+    
+    let auth_a_wire_bytes = bincode::serialize(&auth_msg_out)?;
+    transcript.mix("auth_a", &auth_a_wire_bytes);
     
     // Check if peer requires consent
     let mut msg = recv_msg(stream).await?;
