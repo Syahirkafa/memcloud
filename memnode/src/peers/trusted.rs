@@ -89,22 +89,24 @@ impl TrustedStore {
         self.save()
     }
 
-    pub fn remove_trusted(&self, public_key_or_name: &str) -> Result<bool> {
-        let mut removed = false;
+    pub fn remove_trusted(&self, public_key_or_name: &str) -> Result<Vec<TrustedDevice>> {
+        let mut removed_items = Vec::new();
         {
             let mut lock = self.data.write().unwrap();
-            let initial_len = lock.trusted.len();
-            lock.trusted.retain(|d| {
-                let match_key = d.public_key == public_key_or_name;
-                let match_name = d.name == public_key_or_name;
-                !match_key && !match_name
-            });
-            removed = lock.trusted.len() != initial_len;
+            let mut keep = Vec::new();
+            for device in lock.trusted.drain(..) {
+                if device.public_key == public_key_or_name || device.name == public_key_or_name {
+                    removed_items.push(device);
+                } else {
+                    keep.push(device);
+                }
+            }
+            lock.trusted = keep;
         }
-        if removed {
+        if !removed_items.is_empty() {
             self.save()?;
         }
-        Ok(removed)
+        Ok(removed_items)
     }
 
     pub fn list_trusted(&self) -> Vec<TrustedDevice> {

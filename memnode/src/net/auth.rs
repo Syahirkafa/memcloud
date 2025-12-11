@@ -84,6 +84,7 @@ pub async fn handshake_initiator(
     identity: &Identity,
     ram_quota: u64,
     total_memory: u64,
+    mut on_consent_required: impl FnMut(),
 ) -> Result<Session> {
     let mut transcript = Transcript::new("MemCloud-v2");
 
@@ -147,8 +148,7 @@ pub async fn handshake_initiator(
         match msg {
             (b, HandshakeMessage::ConsentRequired { reason }) => {
                 info!("Peer requires consent: {}", reason);
-                // We just wait. The user on the other side is being prompted.
-                // We expect a ConsentGranted (which is just the Auth message) or ConsentDenied
+                on_consent_required();
                 msg = recv_msg(stream).await?;
             }
             (b, HandshakeMessage::ConsentDenied) => {

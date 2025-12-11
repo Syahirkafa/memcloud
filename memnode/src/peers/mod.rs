@@ -18,6 +18,14 @@ pub mod consent;
 use trusted::TrustedStore;
 use consent::ConsentManager;
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum HandshakeState {
+    Connecting,
+    WaitingForConsent,
+    Authenticated,
+    Failed(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct PeerInfo {
     #[allow(dead_code)]
@@ -54,6 +62,7 @@ pub struct PeerManager {
     identity: Arc<Identity>,
     pub trusted_store: Arc<TrustedStore>,
     pub consent_manager: Arc<ConsentManager>,
+    pub outgoing_handshakes: Arc<DashMap<SocketAddr, HandshakeState>>,
 }
 
 impl PeerManager {
@@ -69,6 +78,7 @@ impl PeerManager {
             identity, 
             trusted_store: Arc::new(TrustedStore::new()),
             consent_manager: Arc::new(ConsentManager::new()),
+            outgoing_handshakes: Arc::new(DashMap::new()),
         }
     }
 
@@ -120,7 +130,16 @@ impl PeerManager {
                 
                 let sys_mem = self.get_total_system_memory();
                 
-                match handshake_initiator(&mut stream, &self.identity, ram_quota, sys_mem).await {
+                let peers_clone = self.peers.clone(); 
+                let handshakes_clone = self.outgoing_handshakes.clone();
+                let addr_clone = addr;
+                
+                self.outgoing_handshakes.insert(addr, HandshakeState::Connecting);
+
+                match handshake_initiator(&mut stream, &self.identity, ram_quota, sys_mem, || {
+                    info!("Callback: Waiting for consent from {}", addr_clone);
+                    handshakes_clone.insert(addr_clone, HandshakeState::WaitingForConsent);
+                }).await {
                     Ok(session) => {
                         info!("Handshake success with {}. Negotiated encryption.", session.peer_name);
                         
@@ -157,7 +176,7 @@ impl PeerManager {
                             }
                         });
                         
-                        Ok(PeerMetadata {
+                        let meta = PeerMetadata {
                             id: peer_id.to_string(),
                             name: session.peer_name,
                             addr: addr.to_string(),
@@ -165,7 +184,11 @@ impl PeerManager {
                             used_memory: 0,
                             quota: session.peer_quota,
                             allowed_quota: ram_quota,
-                        })
+                        };
+                        
+                        self.outgoing_handshakes.insert(addr, HandshakeState::Authenticated);
+                        
+                        Ok(meta)
                     }
                     Err(e) => {
                          error!("Handshake failed with {}: {}", addr, e);

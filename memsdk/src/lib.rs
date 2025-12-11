@@ -63,6 +63,7 @@ pub enum SdkCommand {
     Get { key: String, target: Option<String> },
     ListKeys { pattern: String },
     Stat,
+    PollConnection { addr: String },
     StreamStart { size_hint: Option<u64> },
     StreamChunk { stream_id: u64, chunk_seq: u32, #[serde(with = "serde_bytes")] data: Vec<u8> },
     StreamFinish { stream_id: u64, target: Option<String> },
@@ -117,6 +118,7 @@ pub enum SdkResponse {
     FlushSuccess,
     TrustedList { items: Vec<TrustedDevice> },
     ConsentList { items: Vec<PendingConsent> },
+    ConnectionStatus { state: String, msg: Option<String> },
 }
 
 pub struct MemCloudClient {
@@ -206,12 +208,21 @@ impl MemCloudClient {
         }
     }
 
-    pub async fn connect_peer(&mut self, addr: &str, quota: Option<u64>) -> Result<PeerMetadata> {
+    pub async fn connect_peer(&mut self, addr: &str, quota: Option<u64>) -> Result<(String, Option<String>)> {
          let cmd = SdkCommand::Connect { addr: addr.to_string(), quota };
          match self.send_command(cmd).await? {
-            SdkResponse::PeerConnected { metadata } => Ok(metadata),
+            SdkResponse::ConnectionStatus { state, msg } => Ok((state, msg)),
             SdkResponse::Error { msg } => anyhow::bail!(msg),
             _ => anyhow::bail!("Unexpected response to Connect"),
+        }
+    }
+    
+    pub async fn poll_connection(&mut self, addr: &str) -> Result<(String, Option<String>)> {
+         let cmd = SdkCommand::PollConnection { addr: addr.to_string() };
+         match self.send_command(cmd).await? {
+            SdkResponse::ConnectionStatus { state, msg } => Ok((state, msg)),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response to PollConnection"),
         }
     }
     

@@ -402,17 +402,56 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
             
             println!("🔗 Initiating connection to {}...", addr);
             
-            let meta = client.connect_peer(&addr, Some(quota_val)).await?;
+            let (mut state, mut msg) = client.connect_peer(&addr, Some(quota_val)).await?;
             
-            println!("\n✅ Connection established!");
-            println!("🔐 Secure Session Established (Noise XX / ChaCha20-Poly1305)");
-            println!("\n📡 Handshake successful (Node ID: {})", meta.name);
+            let mut indicated_consent = false;
             
-            // Format stats
-            let total_ram = format_bytes(meta.total_memory);
-            let pooled_ram = format_bytes(quota_val); 
+            loop {
+                match state.as_str() {
+                    "connected" => break,
+                    "failed" => {
+                        let err = msg.unwrap_or_else(|| "Unknown error".to_string());
+                        anyhow::bail!("Connection failed: {}", err);
+                    }
+                    "waiting_consent" => {
+                        if !indicated_consent {
+                            println!("\n⚠️  Peer requires consent. Please approve on the remote device.");
+                            print!("⏳ Waiting for approval...");
+                            io::stdout().flush()?;
+                            indicated_consent = true;
+                        }
+                    }
+                    "pending" | _ => {
+                         // Spin
+                    }
+                }
+                
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                let res = client.poll_connection(&addr).await?;
+                state = res.0;
+                msg = res.1;
+            }
             
-            println!("   Latency: <1ms | Total RAM: {} | RAM Pooled: {}", total_ram, pooled_ram);
+            if indicated_consent {
+                println!("\n✅ Consent granted.");
+            }
+            let peers = client.list_peers().await?;
+            
+            let meta_opt = peers.into_iter().find(|p| p.addr == addr);
+            
+            if let Some(meta) = meta_opt {
+                println!("\n✅ Connection established!");
+                println!("🔐 Secure Session Established (Noise XX / ChaCha20-Poly1305)");
+                println!("\n📡 Handshake successful (Node ID: {})", meta.name);
+                
+                // Format stats
+                let total_ram = format_bytes(meta.total_memory);
+                let pooled_ram = format_bytes(quota_val); 
+                
+                println!("   Latency: <1ms | Total RAM: {} | RAM Pooled: {}", total_ram, pooled_ram);
+            } else {
+                 println!("\n✅ Connection established, but could not retrieve stats immediately.");
+            }
         }
         Commands::Stats => {
             let (blocks, peers, memory) = client.stats().await?;

@@ -42,9 +42,10 @@ pub enum SdkCommand {
     // New KV commands
     Set { key: String, #[serde(with = "serde_bytes")] data: Vec<u8>, target: Option<String> },
     Get { key: String, target: Option<String> },
-    /// List keys with pattern (simple glob: *, prefix*, *suffix, *contains*)
     ListKeys { pattern: String },
     Stat,
+    // Polling
+    PollConnection { addr: String },
     // Streaming Commands
     StreamStart { size_hint: Option<u64> },
     StreamChunk { stream_id: u64, chunk_seq: u32, #[serde(with = "serde_bytes")] data: Vec<u8> },
@@ -94,6 +95,7 @@ pub enum SdkResponse {
     FlushSuccess,
     TrustedList { items: Vec<TrustedDevice> },
     ConsentList { items: Vec<PendingConsent> },
+    ConnectionStatus { state: String, msg: Option<String> },
 }
 
 pub struct RpcServer {
@@ -206,10 +208,37 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                 SdkResponse::PeerList { peers }
             }
             SdkCommand::Connect { addr, quota } => {
-                match block_manager.connect_peer(&addr, block_manager.clone(), quota.unwrap_or(0)).await {
-                    Ok(meta) => SdkResponse::PeerConnected { metadata: meta },
-                    Err(e) => SdkResponse::Error { msg: e.to_string() },
-                }
+                let bm_clone = block_manager.clone();
+                let addr_clone = addr.clone();
+                let quota_clone = quota;
+                
+                tokio::spawn(async move {
+                    let _ = bm_clone.connect_peer(&addr_clone, bm_clone.clone(), quota_clone.unwrap_or(0)).await;
+                });
+                
+                SdkResponse::ConnectionStatus { state: "pending".to_string(), msg: None }
+            }
+            SdkCommand::PollConnection { addr } => {
+                 use std::net::SocketAddr;
+                 use crate::peers::HandshakeState;
+                 
+                 if let Ok(socket_addr) = addr.parse::<SocketAddr>() {
+                     if let Some(state) = block_manager.peer_manager.outgoing_handshakes.get(&socket_addr) {
+                         let (status, msg) = match state.value() {
+                             HandshakeState::Connecting => ("pending", None),
+                             HandshakeState::WaitingForConsent => ("waiting_consent", None),
+                             HandshakeState::Authenticated => ("connected", None),
+                             HandshakeState::Failed(e) => ("failed", Some(e.clone())),
+                         };
+                         SdkResponse::ConnectionStatus { state: status.to_string(), msg: msg.map(|s| s) }
+                     } else {
+                         // Not found - could be not started or potential race if processed very fast?
+                         // Assume idle/none
+                         SdkResponse::ConnectionStatus { state: "unknown".to_string(), msg: Some("No active handshake found".to_string()) }
+                     }
+                 } else {
+                     SdkResponse::Error { msg: "Invalid address format".to_string() }
+                 }
             }
             SdkCommand::UpdatePeerQuota { peer_id, quota } => {
                  if quota > block_manager.get_max_memory() {
@@ -334,7 +363,20 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
             }
             SdkCommand::TrustRemove { key_or_name } => {
                  match block_manager.peer_manager.trusted_store.remove_trusted(&key_or_name) {
-                     Ok(_) => SdkResponse::Success,
+                     Ok(removed) => {
+                         if removed.is_empty() {
+                             SdkResponse::Error { msg: "No matching trusted device found".to_string() }
+                         } else {
+                             for device in removed {
+                                 // Disconnect if connected
+                                 if let Some(peer_id) = block_manager.peer_manager.get_peer_id_by_name(&device.name) {
+                                     info!("Disconnecting removed peer {} ({})", device.name, peer_id);
+                                     block_manager.peer_manager.disconnect_peer(peer_id).await;
+                                 }
+                             }
+                             SdkResponse::Success
+                         }
+                     }
                      Err(e) => SdkResponse::Error { msg: e.to_string() },
                  }
             }
