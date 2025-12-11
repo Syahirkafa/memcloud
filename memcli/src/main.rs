@@ -417,7 +417,8 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
                         }
                     }
                     "pending" | _ => {
-                         // Spin
+                        print!(".");
+                        io::stdout().flush()?;
                     }
                 }
                 

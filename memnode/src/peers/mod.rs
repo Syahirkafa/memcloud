@@ -123,20 +123,26 @@ impl PeerManager {
         }
 
         info!("Connecting to peer {} at {}", id, addr);
-        let stream_res = TcpStream::connect(addr).await;
+        
+        // Track state immediately so CLI sees "pending" instead of "unknown"
+        self.outgoing_handshakes.insert(addr, HandshakeState::Connecting);
+        
+        let connect_fut = TcpStream::connect(addr);
+        let timeout_duration = std::time::Duration::from_secs(5);
+        
+        let stream_res = tokio::time::timeout(timeout_duration, connect_fut).await;
+        
         match stream_res {
-            Ok(mut stream) => {
+            Ok(Ok(mut stream)) => {
                 info!("Connected TCP to {}, starting handshake...", id);
                 
                 let sys_mem = self.get_total_system_memory();
                 
                 let peers_clone = self.peers.clone(); 
                 let handshakes_clone = self.outgoing_handshakes.clone();
-                let addr_clone = addr;
-                
-                self.outgoing_handshakes.insert(addr, HandshakeState::Connecting);
+                let addr_clone = addr; // Copy for closure
 
-                match handshake_initiator(&mut stream, &self.identity, ram_quota, sys_mem, || {
+                match handshake_initiator(&mut stream, &self.identity, ram_quota, sys_mem, move || {
                     info!("Callback: Waiting for consent from {}", addr_clone);
                     handshakes_clone.insert(addr_clone, HandshakeState::WaitingForConsent);
                 }).await {
@@ -151,23 +157,9 @@ impl PeerManager {
                         
                         let writer_arc = Arc::new(tokio::sync::Mutex::new(secure_writer));
 
-                        let peer_id = session.peer_id; // Use ID from session (since original 'id' might be nil if manual)
-
-                        let peer_info = PeerInfo {
-                            id: peer_id,
-                            addr,
-                            name: session.peer_name.clone(),
-                            total_memory: session.peer_total_memory, 
-                            used_memory: 0,
-                            ram_quota, 
-                            remote_chunk_size: 0,
-                            remote_quota: session.peer_quota,
-                            remote_used_storage: 0,
-                            connection: Some(writer_arc.clone()),
-                        };
+                        let peer_id = session.peer_id;
                         
-                        // We must insert using peer_id from session (actual peer UUID)
-                        self.peers.insert(peer_id, peer_info);
+                        self.register_authenticated_peer(peer_id, addr, session.peer_name, writer_arc.clone(), ram_quota, session.peer_total_memory, session.peer_quota);
                         
                         use crate::net::handle_connection_split;
                         tokio::spawn(async move {
@@ -178,7 +170,7 @@ impl PeerManager {
                         
                         let meta = PeerMetadata {
                             id: peer_id.to_string(),
-                            name: session.peer_name,
+                            name: "authenticated".to_string(), // Simplified, we don't return name in meta usually from this deep fn
                             addr: addr.to_string(),
                             total_memory: session.peer_total_memory,
                             used_memory: 0,
@@ -191,14 +183,21 @@ impl PeerManager {
                         Ok(meta)
                     }
                     Err(e) => {
-                         error!("Handshake failed with {}: {}", addr, e);
-                         Err(e)
+                        error!("Handshake failed with {}: {}", addr, e);
+                        self.outgoing_handshakes.insert(addr, HandshakeState::Failed(e.to_string()));
+                        Err(anyhow::anyhow!("Handshake failed: {}", e))
                     }
                 }
             }
-            Err(e) => {
-                error!("Failed to connect to peer {}: {}", id, e);
-                Err(e.into())
+            Ok(Err(e)) => {
+                error!("TCP Connection failed to {}: {}", addr, e);
+                self.outgoing_handshakes.insert(addr, HandshakeState::Failed(format!("TCP Connect Error: {}", e)));
+                Err(anyhow::Error::new(e))
+            }
+            Err(_) => {
+                error!("Connection timed out to {}", addr);
+                self.outgoing_handshakes.insert(addr, HandshakeState::Failed("Connection timed out".to_string()));
+                Err(anyhow::anyhow!("Connection timed out"))
             }
         }
     }
