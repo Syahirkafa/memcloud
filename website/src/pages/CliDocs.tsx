@@ -45,9 +45,19 @@ const CliDocs = () => {
             ]
         },
         {
+            id: "security",
+            title: "Security & Trust",
+            icon: Shield,
+            subItems: [
+                { id: "sec-list", title: "List Trusted" },
+                { id: "sec-consent", title: "Consent Prompt" },
+                { id: "sec-remove", title: "Remove Trust" }
+            ]
+        },
+        {
             id: "storage",
             title: "Storage Operations",
-            icon: Shield,
+            icon: Server,
             subItems: [
                 { id: "store-text", title: "Store Data" },
                 { id: "store-kv-set", title: "Key-Value Set" },
@@ -289,6 +299,35 @@ const CliDocs = () => {
                         <CommandBlock
                             command='memcli peer disconnect <ID_OR_NAME>'
                             description="Gracefully close the secure session with a specific peer."
+                        />
+                    </section>
+
+                    {/* Security & Trust */}
+                    <section id="security" className="mb-16 scroll-mt-24 border-t border-border/50 pt-10">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500"><Shield className="w-6 h-6" /></div>
+                            <h2 className="text-2xl font-bold">Security & Trust</h2>
+                        </div>
+                        <p className="text-muted-foreground mb-6">
+                            Manage trusted devices. By default, new connections require explicit consent.
+                        </p>
+
+                        <h3 id="sec-list" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">List Trusted Devices</h3>
+                        <CommandBlock
+                            command="memcli trust list"
+                            description="Show all devices that have been permanently trusted."
+                        />
+
+                        <h3 id="sec-consent" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Interactive Consent</h3>
+                        <CommandBlock
+                            command="memcli consent"
+                            description="Open an interactive prompt to approve or deny pending connection requests."
+                        />
+
+                        <h3 id="sec-remove" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Remove Trusted Device</h3>
+                        <CommandBlock
+                            command="memcli trust remove <NAME_OR_KEY>"
+                            description="Revoke trust for a specific device. Future connections will require re-approval."
                         />
                     </section>
 

@@ -13,6 +13,11 @@ use tokio::io::BufWriter;
 use crate::net::auth::{Identity, handshake_initiator};
 use crate::net::secure_stream::SecureWriter;
 
+pub mod trusted;
+pub mod consent;
+use trusted::TrustedStore;
+use consent::ConsentManager;
+
 #[derive(Debug, Clone)]
 pub struct PeerInfo {
     #[allow(dead_code)]
@@ -47,6 +52,8 @@ pub struct PeerManager {
     self_id: Uuid,
     self_name: String,
     identity: Arc<Identity>,
+    pub trusted_store: Arc<TrustedStore>,
+    pub consent_manager: Arc<ConsentManager>,
 }
 
 impl PeerManager {
@@ -59,7 +66,9 @@ impl PeerManager {
             pending_key_writes: Arc::new(DashMap::new()),
             self_id,
             self_name,
-            identity, // Store identity for handshakes
+            identity, 
+            trusted_store: Arc::new(TrustedStore::new()),
+            consent_manager: Arc::new(ConsentManager::new()),
         }
     }
 

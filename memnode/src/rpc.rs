@@ -50,6 +50,28 @@ pub enum SdkCommand {
     StreamChunk { stream_id: u64, chunk_seq: u32, #[serde(with = "serde_bytes")] data: Vec<u8> },
     StreamFinish { stream_id: u64, target: Option<String> },
     Flush { target: Option<String> },
+    // Trust & Consent
+    TrustList,
+    TrustRemove { key_or_name: String },
+    ConsentList,
+    ConsentApprove { session_id: String, trust_always: bool },
+    ConsentDeny { session_id: String },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TrustedDevice {
+    pub public_key: String,
+    pub name: String,
+    pub first_seen: u64,
+    pub last_approved: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PendingConsent {
+    pub session_id: String,
+    pub peer_pubkey: String,
+    pub peer_name: String,
+    pub created_at: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -70,6 +92,8 @@ pub enum SdkResponse {
     },
     StreamStarted { stream_id: u64 },
     FlushSuccess,
+    TrustedList { items: Vec<TrustedDevice> },
+    ConsentList { items: Vec<PendingConsent> },
 }
 
 pub struct RpcServer {
@@ -295,6 +319,54 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                     block_manager.flush();
                     SdkResponse::FlushSuccess
                 }
+            }
+            // Trust & Consent
+            SdkCommand::TrustList => {
+                let items = block_manager.peer_manager.trusted_store.list_trusted();
+                // Map local type to RPC type (duplicated def)
+                let rpc_items = items.into_iter().map(|d| TrustedDevice {
+                    public_key: d.public_key,
+                    name: d.name,
+                    first_seen: d.first_seen,
+                    last_approved: d.last_approved,
+                }).collect();
+                SdkResponse::TrustedList { items: rpc_items }
+            }
+            SdkCommand::TrustRemove { key_or_name } => {
+                 match block_manager.peer_manager.trusted_store.remove_trusted(&key_or_name) {
+                     Ok(_) => SdkResponse::Success,
+                     Err(e) => SdkResponse::Error { msg: e.to_string() },
+                 }
+            }
+            SdkCommand::ConsentList => {
+                let items = block_manager.peer_manager.consent_manager.get_pending_list();
+                let rpc_items = items.into_iter().map(|c| PendingConsent {
+                    session_id: c.session_id,
+                    peer_pubkey: c.peer_pubkey,
+                    peer_name: c.peer_name,
+                    created_at: c.created_at,
+                }).collect();
+                SdkResponse::ConsentList { items: rpc_items }
+            }
+            SdkCommand::ConsentApprove { session_id, trust_always } => {
+                 use crate::peers::consent::ConsentDecision;
+                 let decision = if trust_always {
+                     ConsentDecision::ApprovedAndTrusted
+                 } else {
+                     ConsentDecision::ApprovedOnce
+                 };
+                 
+                 match block_manager.peer_manager.consent_manager.resolve(&session_id, decision) {
+                     Ok(_) => SdkResponse::Success,
+                     Err(e) => SdkResponse::Error { msg: e.to_string() },
+                 }
+            }
+            SdkCommand::ConsentDeny { session_id } => {
+                 use crate::peers::consent::ConsentDecision;
+                 match block_manager.peer_manager.consent_manager.resolve(&session_id, ConsentDecision::Denied) {
+                     Ok(_) => SdkResponse::Success,
+                     Err(e) => SdkResponse::Error { msg: e.to_string() },
+                 }
             }
         };
 

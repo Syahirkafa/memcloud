@@ -177,7 +177,10 @@ MemCloud employs a **Secure Session Protocol** (inspired by **Noise Protocol XX 
     *   **Session**: Traffic keys are derived from the shared secret + transcript hash, ensuring forward secrecy and strong unique session binding.
 3.  **Encryption**: All traffic (including the Auth phase) is encrypted using **ChaCha20-Poly1305** (AEAD).
 
-**Zero-Configuration**: By default, MemCloud uses a Trust-On-First-Use (TOFU) model. No certificates to manage—just run and it works securely.
+**Zero-Configuration**: By default, MemCloud uses a Trust-On-First-Use (TOFU) model with an interactive consent layer.
+*   **First Connect**: The receiving user is prompted to Allow (Once), Trust (Always), or Deny.
+*   **Trusted**: If "Trust Always" is selected, the device is added to `~/.memcloud/trusted_devices.json` and future connections are automatic.
+*   **Untrusted**: Connections are paused until approved via the CLI.
 
 ---
 
@@ -337,6 +340,11 @@ memcli peer update <NAME_OR_ID> --quota "1gb"
 
 # Disconnect from a peer
 memcli peer disconnect <NAME_OR_ID>
+
+# Manage Trust
+memcli trust list                  # List trusted devices
+memcli trust remove <NAME_OR_ID>   # Remove a device from trust store
+memcli consent                     # Interactive prompt for pending requests
 ```
 
 **Show Stats:**

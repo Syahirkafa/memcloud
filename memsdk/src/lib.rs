@@ -67,6 +67,12 @@ pub enum SdkCommand {
     StreamChunk { stream_id: u64, chunk_seq: u32, #[serde(with = "serde_bytes")] data: Vec<u8> },
     StreamFinish { stream_id: u64, target: Option<String> },
     Flush { target: Option<String> },
+    // Trust & Consent
+    TrustList,
+    TrustRemove { key_or_name: String },
+    ConsentList,
+    ConsentApprove { session_id: String, trust_always: bool },
+    ConsentDeny { session_id: String },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -78,6 +84,22 @@ pub struct PeerMetadata {
     pub used_memory: u64,
     pub quota: u64,
     pub allowed_quota: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TrustedDevice {
+    pub public_key: String,
+    pub name: String,
+    pub first_seen: u64,
+    pub last_approved: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PendingConsent {
+    pub session_id: String,
+    pub peer_pubkey: String,
+    pub peer_name: String,
+    pub created_at: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -93,6 +115,8 @@ pub enum SdkResponse {
     Status { blocks: usize, peers: usize, memory_usage: usize },
     StreamStarted { stream_id: u64 },
     FlushSuccess,
+    TrustedList { items: Vec<TrustedDevice> },
+    ConsentList { items: Vec<PendingConsent> },
 }
 
 pub struct MemCloudClient {
@@ -294,6 +318,51 @@ impl MemCloudClient {
             SdkResponse::Stored { id } => Ok(id),
             SdkResponse::Error { msg } => anyhow::bail!(msg),
             _ => anyhow::bail!("Unexpected response to StreamFinish"),
+        }
+    }
+    // Trust API
+    pub async fn list_trusted(&mut self) -> Result<Vec<TrustedDevice>> {
+        let cmd = SdkCommand::TrustList;
+        match self.send_command(cmd).await? {
+            SdkResponse::TrustedList { items } => Ok(items),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response"),
+        }
+    }
+
+    pub async fn remove_trusted(&mut self, key_or_name: &str) -> Result<()> {
+        let cmd = SdkCommand::TrustRemove { key_or_name: key_or_name.to_string() };
+        match self.send_command(cmd).await? {
+            SdkResponse::Success => Ok(()),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response"),
+        }
+    }
+
+    pub async fn list_consent(&mut self) -> Result<Vec<PendingConsent>> {
+        let cmd = SdkCommand::ConsentList;
+        match self.send_command(cmd).await? {
+            SdkResponse::ConsentList { items } => Ok(items),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response"),
+        }
+    }
+
+    pub async fn approve_consent(&mut self, session_id: &str, trust_always: bool) -> Result<()> {
+        let cmd = SdkCommand::ConsentApprove { session_id: session_id.to_string(), trust_always };
+        match self.send_command(cmd).await? {
+            SdkResponse::Success => Ok(()),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response"),
+        }
+    }
+
+    pub async fn deny_consent(&mut self, session_id: &str) -> Result<()> {
+        let cmd = SdkCommand::ConsentDeny { session_id: session_id.to_string() };
+        match self.send_command(cmd).await? {
+            SdkResponse::Success => Ok(()),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response"),
         }
     }
 }

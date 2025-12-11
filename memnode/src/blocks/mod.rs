@@ -26,7 +26,7 @@ pub trait BlockManager: Send + Sync {
 pub struct InMemoryBlockManager {
     pub(crate) blocks: Arc<DashMap<BlockId, Block>>,
     key_index: Arc<DashMap<String, BlockId>>,
-    peer_manager: Arc<PeerManager>,
+    pub peer_manager: Arc<PeerManager>,
     // Map to track if a block ID is stored remotely to route GETs
     remote_locations: Arc<DashMap<BlockId, uuid::Uuid>>,
     // Track total memory usage in bytes

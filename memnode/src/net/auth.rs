@@ -8,8 +8,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 use crate::peers::PeerMetadata;
 use super::transcript::Transcript;
+use crate::peers::trusted::TrustedStore;
+use crate::peers::consent::{ConsentManager, ConsentDecision};
+use std::sync::Arc;
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
-use chacha20poly1305::aead::{Aead, KeyInit};
+use chacha20poly1305::aead::{Aead, AeadCore, KeyInit};
+use log::{info, error};
 
 // --- Wire Messages ---
 
@@ -17,6 +21,8 @@ use chacha20poly1305::aead::{Aead, KeyInit};
 pub enum HandshakeMessage {
     Hello(HandshakeHello),
     Auth(Vec<u8>), // Encrypted HandshakeAuth
+    ConsentRequired { reason: String },
+    ConsentDenied,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -129,13 +135,33 @@ pub async fn handshake_initiator(
         
     send_msg(stream, &HandshakeMessage::Auth(ciphertext_a.clone())).await?;
     
-    let sent_auth_msg_bytes = bincode::serialize(&HandshakeMessage::Auth(ciphertext_a))?;
-    transcript.mix("auth_a", &sent_auth_msg_bytes);
+    // Check if peer requires consent
+    let mut msg = recv_msg(stream).await?;
+    
+    // Handle Consent Loop
+    loop {
+        match msg {
+            (b, HandshakeMessage::ConsentRequired { reason }) => {
+                info!("Peer requires consent: {}", reason);
+                // We just wait. The user on the other side is being prompted.
+                // We expect a ConsentGranted (which is just the Auth message) or ConsentDenied
+                msg = recv_msg(stream).await?;
+            }
+            (b, HandshakeMessage::ConsentDenied) => {
+                bail!("Connection rejected by peer user.");
+            }
+            (b, HandshakeMessage::Auth(c)) => {
+                // This is effectively "Granted"
+                msg = (b, HandshakeMessage::Auth(c));
+                break;
+            }
+            (_, m) => bail!("Unexpected message during auth wait: {:?}", m),
+        }
+    }
 
-    let msg = recv_msg(stream).await?;
     let (auth_b_msg_bytes, ciphertext_b) = match msg {
         (b, HandshakeMessage::Auth(c)) => (b, c),
-        (_, m) => bail!("Expected Auth, got {:?}", m),
+        _ => unreachable!(),
     };
     
     let nonce_b_dec = Nonce::from_slice(&[0,0,0,0,0,0,0,0,0,0,0,1]); 
@@ -172,6 +198,8 @@ pub async fn handshake_initiator(
 pub async fn handshake_responder(
     stream: &mut TcpStream,
     identity: &Identity,
+    trusted_store: Arc<TrustedStore>,
+    consent_manager: Arc<ConsentManager>,
     ram_quota: u64,
     total_memory: u64,
 ) -> Result<Session> {
@@ -226,6 +254,36 @@ pub async fn handshake_responder(
     let peer_signature = Signature::from_bytes(auth_a.signature.as_slice().try_into().unwrap());
     peer_key.verify(&transcript.current_hash(), &peer_signature)
         .context("Peer signature verification failed")?;
+
+    let peer_pub_key_hex = hex::encode(auth_a.pub_key);
+    if !trusted_store.is_trusted(&peer_pub_key_hex) {
+        info!("Peer {} ({}) is unknown. Requesting consent...", auth_a.name, peer_pub_key_hex);
+        
+        send_msg(stream, &HandshakeMessage::ConsentRequired { reason: "untrusted_peer".to_string() }).await?;
+
+        let session_id = Uuid::new_v4().to_string();
+        consent_manager.request_consent(session_id.clone(), peer_pub_key_hex.clone(), auth_a.name.clone());
+        
+        // Wait
+        let decision = consent_manager.wait_for_decision(&session_id).await;
+        
+        match decision {
+            ConsentDecision::ApprovedOnce => {
+                info!("Consent granted (once) for {}", auth_a.name);
+            }
+            ConsentDecision::ApprovedAndTrusted => {
+                info!("Consent granted (trusted) for {}", auth_a.name);
+                trusted_store.add_trusted(peer_pub_key_hex, auth_a.name.clone())?;
+            }
+            ConsentDecision::Denied | ConsentDecision::Pending => {
+                info!("Consent denied for {}", auth_a.name);
+                send_msg(stream, &HandshakeMessage::ConsentDenied).await?;
+                bail!("Connection denied by user");
+            }
+        }
+    } else {
+        info!("Peer {} is trusted. Proceeding.", auth_a.name);
+    }
         
     transcript.mix("auth_a", &auth_a_msg_bytes);
     

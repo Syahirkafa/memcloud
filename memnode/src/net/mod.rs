@@ -102,7 +102,7 @@ impl TransportServer {
                          let sys_mem = pm.get_total_system_memory();
                          let my_quota = bm.get_max_memory();
                          
-                         match auth::handshake_responder(&mut stream, &identity, my_quota, sys_mem).await {
+                         match auth::handshake_responder(&mut stream, &identity, pm.trusted_store.clone(), pm.consent_manager.clone(), my_quota, sys_mem).await {
                              Ok(session) => {
                                  info!("Handshake accepted from {} ({}). Negotiated secure session.", session.peer_name, session.peer_id);
                                  

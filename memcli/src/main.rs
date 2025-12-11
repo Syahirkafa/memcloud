@@ -129,6 +129,21 @@ enum Commands {
         #[arg(long)]
         peer: Option<String>,
     },
+    /// Manage trusted devices
+    Trust {
+        #[command(subcommand)]
+        action: TrustAction,
+    },
+    /// Interactive consent management
+    Consent,
+}
+
+#[derive(Subcommand)]
+enum TrustAction {
+    List,
+    Remove {
+        key_or_name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -172,6 +187,11 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Logs { follow } => {
             handle_logs(follow)?;
+        }
+        Commands::Consent => {
+            // Interactive consent loop
+            let mut client = MemCloudClient::connect().await?;
+            handle_consent(&mut client).await?;
         }
         other => {
             // All other commands require connecting to the daemon
@@ -429,7 +449,29 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
                 println!("\nFound {} keys (took {:?})", keys.len(), duration);
             }
         }
-        Commands::Node { .. } | Commands::Logs { .. } => unreachable!(), // Handled above
+        Commands::Trust { action } => {
+            match action {
+                TrustAction::List => {
+                    let items = client.list_trusted().await?;
+                    if items.is_empty() {
+                         println!("No trusted devices found.");
+                    } else {
+                         println!("{:<20} {:<30} {:<64}", "Name", "Last Approved", "Public Key");
+                         println!("{}", "-".repeat(116));
+                         for item in items {
+                             // Format time
+                             let time_str = format!("{}", item.last_approved);
+                             println!("{:<20} {:<30} {:<64}", item.name, time_str, item.public_key);
+                         }
+                    }
+                }
+                TrustAction::Remove { key_or_name } => {
+                    client.remove_trusted(&key_or_name).await?;
+                    println!("Removed '{}' from trusted devices.", key_or_name);
+                }
+            }
+        }
+        Commands::Consent | Commands::Node { .. } | Commands::Logs { .. } => unreachable!(),
         Commands::Version => {
             println!("memcli {}", env!("CARGO_PKG_VERSION"));
             // Try to connect to node to get its version?
@@ -592,4 +634,49 @@ fn print_peers_table(peers: &[memsdk::PeerMetadata]) {
     print_sep("└", "┴", "┘", "─");
 
     println!("\n📊 Total Pooled RAM (Outbound): {}", format_bytes(total_pooled));
+}
+
+async fn handle_consent(client: &mut MemCloudClient) -> anyhow::Result<()> {
+    loop {
+        let pending = client.list_consent().await?;
+        
+        if pending.is_empty() {
+            println!("No pending consent requests.");
+            return Ok(());
+        }
+
+        println!("Found {} pending request(s).", pending.len());
+        
+        for req in pending {
+            println!("\nDevice: {} ({})", req.peer_name, req.peer_pubkey); 
+            println!("Wants to connect. Request ID: {}", req.session_id);
+            
+            // Interaction
+            let selection = dialoguer::Select::new()
+                .with_prompt("Action")
+                .items(&["Allow (Once)", "Trust Always", "Deny", "Skip"])
+                .default(0)
+                .interact()?;
+
+            match selection {
+                0 => { // Allow Once
+                    client.approve_consent(&req.session_id, false).await?;
+                    println!("✅ Allowed.");
+                }
+                1 => { // Trust Always
+                    client.approve_consent(&req.session_id, true).await?;
+                    println!("✅ Trustees.");
+                }
+                2 => { // Deny
+                    client.deny_consent(&req.session_id).await?;
+                    println!("❌ Denied.");
+                }
+                _ => {
+                    println!("Skipped.");
+                }
+            }
+        }
+        
+        println!("Checking for more...");
+    }
 }
