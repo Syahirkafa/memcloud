@@ -116,6 +116,7 @@ cargo clippy --workspace
   - `refactor: restructure block manager`
   - `test: add unit tests for peer discovery`
   - `chore: update dependencies`
+  - `ci: update GitHub Actions workflow`
 
 ---
 
