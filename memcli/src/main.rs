@@ -126,10 +126,10 @@ enum Commands {
         #[arg(long)]
         peer: Option<String>,
     },
-    /// List keys matching a pattern (default: *)
+    /// List keys matching patterns (default: *)
     Keys {
-        #[arg(default_value = "*")]
-        pattern: String,
+        #[arg(default_value = "*", num_args = 0..)]
+        patterns: Vec<String>,
     },
     /// Check the version of memcli and the connected node
     Version,
@@ -502,18 +502,34 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
             let value = String::from_utf8_lossy(&data);
             println!("Get '{}' -> '{}' (took {:?})", key, value, duration);
         }
-        Commands::Keys { pattern } => {
+        Commands::Keys { patterns } => {
             let start = Instant::now();
-            let keys = client.list_keys(&pattern).await?;
+            let mut all_keys = std::collections::HashSet::new();
+            
+            for pattern in &patterns {
+                 let keys = client.list_keys(pattern).await?;
+                 for k in keys {
+                     all_keys.insert(k);
+                 }
+            }
+            
+            let mut sorted_keys: Vec<_> = all_keys.into_iter().collect();
+            sorted_keys.sort();
+            
             let duration = start.elapsed();
             
-            if keys.is_empty() {
-                println!("No keys found matching '{}'", pattern);
+            if sorted_keys.is_empty() {
+                println!("No keys found matching {:?}", patterns);
+                // Hint about shell expansion if likely cause
+                let looks_like_expansion = patterns.len() > 1 && !patterns.iter().any(|p| p.contains('*') || p.contains('?'));
+                if looks_like_expansion {
+                     println!("(Hint: wildcard '*' might have been expanded by your shell. Try quoting it: 'memcli keys \"*\"')");
+                }
             } else {
-                for k in &keys {
+                for k in &sorted_keys {
                     println!("{}", k);
                 }
-                println!("\nFound {} keys (took {:?})", keys.len(), duration);
+                println!("\nFound {} unique keys (took {:?})", sorted_keys.len(), duration);
             }
         }
         Commands::Trust { action } => {
