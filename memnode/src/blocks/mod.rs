@@ -370,10 +370,13 @@ impl InMemoryBlockManager {
     }
 
     pub fn vm_alloc(&self, size: u64) -> u64 {
-        self.vm_manager.create_region(size)
+        let id = self.vm_manager.create_region(size);
+        info!("VM: Allocated region {} of size {} bytes", id, size);
+        id
     }
 
     pub async fn vm_fetch(&self, region_id: u64, page_index: u64) -> Result<Vec<u8>> {
+        info!("VM: Fetching page {} for region {}", page_index, region_id);
         let region = self.vm_manager.get_region(region_id).ok_or_else(|| anyhow::anyhow!("Region not found"))?;
         let block_id_opt = region.pages.get(&page_index).map(|v| *v);
         if let Some(block_id) = block_id_opt {
@@ -387,6 +390,7 @@ impl InMemoryBlockManager {
     }
 
     pub async fn vm_store(&self, region_id: u64, page_index: u64, data: Vec<u8>) -> Result<()> {
+        info!("VM: Storing page {} for region {}", page_index, region_id);
         let region = self.vm_manager.get_region(region_id).ok_or_else(|| anyhow::anyhow!("Region not found"))?;
         
         let id = rand::random::<u64>();

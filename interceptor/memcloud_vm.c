@@ -140,14 +140,7 @@ static void lazy_init() {
     }
   }
 
-  struct sigaction sa;
-  sa.sa_flags = SA_SIGINFO;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_sigaction = page_fault_handler;
-  sigaction(SIGSEGV, &sa, NULL);
-#ifdef __APPLE__
-  sigaction(SIGBUS, &sa, NULL);
-#endif
+  // Signal handlers are now installed in the constructor (init_interceptor)
 
   pthread_t th;
   pthread_create(&th, NULL, sync_thread, NULL);
@@ -385,6 +378,8 @@ void HOOK(free)(void *ptr) {
 }
 
 static void page_fault_handler(int sig, siginfo_t *si, void *ctx_ptr) {
+  fprintf(stderr, "[memcloud-vm] SIGSEGV received at address=%p\n",
+          si->si_addr);
   void *fault_addr = si->si_addr;
   pthread_mutex_lock(&region_mutex);
   VmRegion *region = find_region(fault_addr);
@@ -435,6 +430,19 @@ static void *sync_thread(void *arg) {
   return NULL;
 }
 
+static void install_sigsegv_handler() {
+  struct sigaction sa;
+  sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_sigaction = page_fault_handler;
+  sigaction(SIGSEGV, &sa, NULL);
+#ifdef __APPLE__
+  sigaction(SIGBUS, &sa, NULL);
+#endif
+  fprintf(stderr, "[memcloud-vm] SIGSEGV handler installed (pid=%d)\n",
+          getpid());
+}
+
 __attribute__((constructor)) void init_interceptor() {
-  // Do nothing or very minimal to avoid early malloc
+  install_sigsegv_handler();
 }

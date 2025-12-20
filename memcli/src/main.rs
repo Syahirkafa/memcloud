@@ -115,7 +115,11 @@ enum Commands {
         quota: Option<String>,
     },
     /// Show memory usage and stats
-    Stats,
+    Stats {
+        /// Follow and refresh stats live
+        #[arg(short, long)]
+        follow: bool,
+    },
     /// Set a key-value pair
     Set {
         key: String,
@@ -510,17 +514,32 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
                  println!("\n✅ Connection established, but could not retrieve stats immediately.");
             }
         }
-        Commands::Stats => {
-            let (blocks, peers, memory, vm_regions, vm_pages, vm_bytes) = client.stats().await?;
-            println!("-------- MemCloud Stats --------");
-            println!("Blocks Stored:    {}", blocks);
-            println!("Peers Connected:  {}", peers);
-            println!("Memory Usage:     {}", format_bytes(memory as u64));
-            println!("--------------------------------");
-            println!("Remote VM regions:      {}", vm_regions);
-            println!("Remote VM pages mapped: {}", vm_pages);
-            println!("Remote VM memory in use: {}", format_bytes(vm_bytes as u64));
-            println!("--------------------------------");
+        Commands::Stats { follow } => {
+            loop {
+                let (blocks, peers, memory, vm_regions, vm_pages, vm_bytes) = client.stats().await?;
+                
+                // Clear screen (ANSI escape code)
+                if follow {
+                    print!("\x1B[2J\x1B[H");
+                }
+
+                println!("-------- MemCloud Stats --------");
+                println!("Blocks Stored:    {}", blocks);
+                println!("Peers Connected:  {}", peers);
+                println!("Memory Usage:     {}", format_bytes(memory as u64));
+                println!("--------------------------------");
+                println!("Remote VM regions:      {}", vm_regions);
+                println!("Remote VM pages mapped: {}", vm_pages);
+                println!("Remote VM memory in use: {}", format_bytes(vm_bytes as u64));
+                println!("--------------------------------");
+
+                if !follow {
+                    break;
+                }
+                
+                println!("\n(Press Ctrl+C to stop following)");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
         }
         Commands::Set { key, value, peer, mode } => {
             let start = Instant::now();
