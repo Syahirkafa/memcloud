@@ -405,6 +405,19 @@ impl InMemoryBlockManager {
         region.pages.insert(page_index, id);
         Ok(())
     }
+
+    pub fn vm_free(&self, region_id: u64) -> Result<()> {
+        if let Some(region) = self.vm_manager.remove_region(region_id) {
+            info!("Freeing VM region {} ({} bytes)", region_id, region.size);
+            for entry in region.pages.iter() {
+                let block_id = *entry.value();
+                let _ = self.evict_block(block_id);
+            }
+            Ok(())
+        } else {
+            anyhow::bail!("VM Region not found")
+        }
+    }
 }
 
 impl BlockManager for InMemoryBlockManager {

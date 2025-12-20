@@ -155,7 +155,12 @@ pub struct MemCloudClient {
 impl MemCloudClient {
     #[cfg(unix)]
     pub async fn connect() -> Result<Self> {
-        let stream = UnixStream::connect("/tmp/memcloud.sock").await?;
+        Self::connect_with_path("/tmp/memcloud.sock").await
+    }
+
+    #[cfg(unix)]
+    pub async fn connect_with_path(path: &str) -> Result<Self> {
+        let stream = UnixStream::connect(path).await?;
         Ok(Self { stream })
     }
 

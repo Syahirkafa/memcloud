@@ -449,6 +449,15 @@ const handle = await cloud.storeStream(stream);
 console.log("Stored Stream ID:", handle.id);
 ```
 
+### 7. 🧠 C/C++ Memory Offloading (Interceptor)
+Offload large heap allocations from any application without source changes.
+
+```bash
+# Offload allocations >= 32MB to MemCloud
+memcli run --threshold 32 ./my_application
+```
+See [Memory Offloading Guide](./docs/interceptor.md) for details.
+
 See `js-sdk/README.md` for full API documentation.
 
 ## Uninstallation

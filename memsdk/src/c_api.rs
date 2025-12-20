@@ -13,8 +13,31 @@ lazy_static! {
 
 #[no_mangle]
 pub extern "C" fn memcloud_init() -> c_int {
+    let socket_path = std::env::var("MEMCLOUD_SOCKET").unwrap_or_else(|_| "/tmp/memcloud.sock".to_string());
     RUNTIME.block_on(async {
-        match MemCloudClient::connect().await {
+        match MemCloudClient::connect_with_path(&socket_path).await {
+            Ok(client) => {
+                *CLIENT.lock().unwrap() = Some(client);
+                0
+            }
+            Err(_) => -1,
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn memcloud_init_with_path(socket_path: *const std::os::raw::c_char) -> c_int {
+    if socket_path.is_null() {
+        return -1;
+    }
+    let c_str = unsafe { std::ffi::CStr::from_ptr(socket_path) };
+    let path = match c_str.to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+
+    RUNTIME.block_on(async {
+        match MemCloudClient::connect_with_path(path).await {
             Ok(client) => {
                 *CLIENT.lock().unwrap() = Some(client);
                 0

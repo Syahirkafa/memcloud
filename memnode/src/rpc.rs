@@ -145,9 +145,13 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                 }
             }
             SdkCommand::Free { id } => {
-                match block_manager.evict_block(id) {
-                    Ok(_) => SdkResponse::Success,
-                    Err(e) => SdkResponse::Error { msg: e.to_string() },
+                if block_manager.vm_free(id).is_ok() {
+                    SdkResponse::Success
+                } else {
+                    match block_manager.evict_block(id) {
+                        Ok(_) => SdkResponse::Success,
+                        Err(e) => SdkResponse::Error { msg: e.to_string() },
+                    }
                 }
             }
             SdkCommand::ListPeers => {

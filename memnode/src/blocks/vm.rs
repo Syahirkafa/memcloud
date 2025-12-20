@@ -42,4 +42,8 @@ impl VmRegionManager {
         }
         (regions, pages)
     }
+
+    pub fn remove_region(&self, id: u64) -> Option<Arc<VmRegion>> {
+        self.regions.remove(&id).map(|(_, r)| r)
+    }
 }

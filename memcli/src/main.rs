@@ -174,6 +174,17 @@ enum Commands {
     },
     /// Interactive consent management
     Consent,
+    /// Run a command with MemCloud VM interception
+    Run {
+        /// Malloc threshold in MB
+        #[arg(short, long, default_value_t = 8)]
+        threshold: u64,
+        /// Command to execute
+        command: String,
+        /// Arguments for the command
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -227,13 +238,19 @@ async fn main() -> anyhow::Result<()> {
             handle_logs(follow)?;
         }
         Commands::Consent => {
-            // Interactive consent loop
-            let mut client = MemCloudClient::connect().await?;
+            let mut client = MemCloudClient::connect_with_path(&cli.socket).await?;
             handle_consent(&mut client).await?;
+        }
+        Commands::Run { threshold, command, args } => {
+            // Verify daemon is running
+            let _ = MemCloudClient::connect_with_path(&cli.socket).await.map_err(|_| {
+                anyhow::anyhow!("❌ MemCloud node is not running. Please start it with 'memcli node start' first.")
+            })?;
+            handle_run(threshold, command, args, &cli.socket)?;
         }
         other => {
             // All other commands require connecting to the daemon
-            let mut client = MemCloudClient::connect().await?;
+            let mut client = MemCloudClient::connect_with_path(&cli.socket).await?;
             handle_data_command(other, &mut client).await?;
         }
     }
@@ -640,8 +657,88 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
             let duration = start.elapsed();
             println!("Streamed block ID: {} (took {:?})", id, duration);
         }
+        Commands::Run { .. } => {
+            // Handled in main
+            unreachable!("Run should be handled in main");
+        }
     }
     Ok(())
+}
+
+fn handle_run(threshold: u64, command: String, args: Vec<String>, socket: &str) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        let mut cmd = Command::new(&command);
+        cmd.args(args);
+
+        // 1. Determine interceptor path
+        // For development, we look in the current directory and target/debug
+        let dylib_name = if cfg!(target_os = "macos") {
+            "libmemcloud_vm.dylib"
+        } else {
+            "libmemcloud_vm.so"
+        };
+
+        let mut dylib_path = None;
+        let search_paths = [
+            std::env::current_dir()?.join("interceptor").join(dylib_name),
+            std::env::current_dir()?.join("target").join("debug").join(dylib_name),
+            PathBuf::from("/usr/local/lib").join(dylib_name),
+        ];
+
+        for path in &search_paths {
+            if path.exists() {
+                dylib_path = Some(path.to_string_lossy().to_string());
+                break;
+            }
+        }
+
+        let interceptor_path = match dylib_path {
+            Some(p) => p,
+            None => {
+                println!("❌ Could not find interceptor library ({}).", dylib_name);
+                println!("   Search paths: {:?}", search_paths);
+                return Ok(());
+            }
+        };
+
+        // 2. Set environment variables
+        if cfg!(target_os = "macos") {
+            cmd.env("DYLD_INSERT_LIBRARIES", &interceptor_path);
+            cmd.env("DYLD_FORCE_FLAT_NAMESPACE", "1");
+        } else {
+            cmd.env("LD_PRELOAD", &interceptor_path);
+        }
+
+        cmd.env("MEMCLOUD_MALLOC_THRESHOLD_MB", threshold.to_string());
+        cmd.env("MEMCLOUD_SOCKET", socket);
+
+        // Help the dynamic linker find libmemsdk if needed
+        let lib_env = if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" };
+        let mut lib_path = std::env::var(lib_env).unwrap_or_default();
+        let sdk_dir = std::env::current_dir()?.join("target").join("debug");
+        if !lib_path.is_empty() {
+             lib_path.push(':');
+        }
+        lib_path.push_str(&sdk_dir.to_string_lossy());
+        cmd.env(lib_env, lib_path);
+
+        println!("🚀 Running '{}' with MemCloud interception...", command);
+        println!("   (Threshold: {} MB, Socket: {})", threshold, socket);
+
+        // Execute and replace process
+        let err = cmd.exec();
+        
+        // If exec returns, it failed
+        anyhow::bail!("Failed to execute command: {}", err);
+    }
+
+    #[cfg(not(unix))]
+    {
+        anyhow::bail!("'run' command is only supported on Unix-like systems (Linux/macOS)");
+    }
 }
 
 fn target_peer_string(peer: Option<String>) -> Option<String> {
