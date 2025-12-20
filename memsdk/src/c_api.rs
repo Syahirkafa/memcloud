@@ -15,6 +15,9 @@ lazy_static! {
 }
 
 #[no_mangle]
+pub extern "C" fn memcloud_noop() {}
+
+#[no_mangle]
 pub extern "C" fn memcloud_init() -> c_int {
     let default_path = if cfg!(windows) { "127.0.0.1:7070" } else { "/tmp/memcloud.sock" };
     let socket_path = std::env::var("MEMCLOUD_SOCKET").unwrap_or_else(|_| default_path.to_string());
@@ -29,6 +32,14 @@ pub extern "C" fn memcloud_init() -> c_int {
     })
 }
 
+extern "C" {
+    fn write(fd: i32, buf: *const u8, count: usize) -> isize;
+}
+
+fn raw_log(msg: &str) {
+    unsafe { write(2, msg.as_ptr(), msg.len()); }
+}
+
 #[no_mangle]
 pub extern "C" fn memcloud_init_with_path(socket_path: *const std::os::raw::c_char) -> c_int {
     if socket_path.is_null() {
@@ -40,14 +51,19 @@ pub extern "C" fn memcloud_init_with_path(socket_path: *const std::os::raw::c_ch
         Err(_) => return -1,
     };
 
-    // No println! in interceptor path to avoid deadlocks
+    raw_log("[memsdk] init_with_path: entry\n");
     RUNTIME.block_on(async {
+        raw_log("[memsdk] init_with_path: in block_on\n");
         match MemCloudClient::connect_with_path(path).await {
             Ok(client) => {
+                raw_log("[memsdk] init_with_path: connected\n");
                 *CLIENT.lock().unwrap() = Some(client);
                 0
             }
-            Err(_) => -1,
+            Err(_) => {
+                raw_log("[memsdk] init_with_path: connect failed\n");
+                -1
+            }
         }
     })
 }

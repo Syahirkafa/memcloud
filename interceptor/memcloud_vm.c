@@ -35,11 +35,11 @@ extern size_t malloc_size(const void *ptr);
 #endif
 
 #ifndef MAP_ANONYMOUS
+#ifdef __APPLE__
+#define MAP_ANONYMOUS 0x1000
+#else
 #define MAP_ANONYMOUS 0x20
 #endif
-
-#ifndef PAGE_SIZE
-#define PAGE_SIZE 4096
 #endif
 
 #define MAX_REGIONS 1024
@@ -211,12 +211,13 @@ static void *allocate_remote_region(size_t size) {
   if (memcloud_vm_alloc(size, &region_id) != 0)
     return NULL;
 
+  long ps = sysconf(_SC_PAGESIZE);
   void *addr =
       real_mmap(NULL, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (addr == MAP_FAILED)
     return NULL;
 
-  if (mprotect(addr, PAGE_SIZE, PROT_NONE) != 0) {
+  if (mprotect(addr, ps, PROT_NONE) != 0) {
     log_fmt("[memcloud-vm] FATAL: mprotect(PROT_NONE) failed: %s\n",
             strerror(errno));
     munmap(addr, size);
@@ -233,7 +234,7 @@ static void *allocate_remote_region(size_t size) {
       regions[i].size = size;
       regions[i].region_id = region_id;
       regions[i].active = 1;
-      memset(regions[i].dirty_bits, 0, (size + PAGE_SIZE - 1) / PAGE_SIZE);
+      memset(regions[i].dirty_bits, 0, (size + ps - 1) / ps);
       pthread_mutex_unlock(&region_mutex);
       log_msg("[memcloud-vm] intercepted large allocation\n");
       return addr;
@@ -383,53 +384,86 @@ void HOOK(free)(void *ptr) {
 
 static void page_fault_handler(int sig, siginfo_t *si, void *ctx_ptr) {
   void *fault_addr = si->si_addr;
-  void *page_start = (void *)((uintptr_t)fault_addr & ~(PAGE_SIZE - 1));
+  long ps = sysconf(_SC_PAGESIZE);
+  void *page_start = (void *)((uintptr_t)fault_addr & ~(ps - 1));
 
+  uint64_t region_id = 0;
+  uintptr_t page_index = 0;
+  int found = 0;
+
+  // 1. Find region under lock
   pthread_mutex_lock(&region_mutex);
   VmRegion *region = find_region(page_start);
   if (region) {
-    log_fmt("[memcloud-vm] mapping page at %p\n", page_start);
-    uintptr_t page_index =
-        ((uintptr_t)page_start - (uintptr_t)region->addr) / PAGE_SIZE;
+    region_id = region->region_id;
+    page_index = ((uintptr_t)page_start - (uintptr_t)region->addr) / ps;
+    found = 1;
+  }
+  pthread_mutex_unlock(&region_mutex);
 
-    if (real_mmap) {
-      if (real_mmap(page_start, PAGE_SIZE, PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1,
-                    0) == MAP_FAILED) {
-        log_fmt("[memcloud-vm] FATAL: mmap(MAP_FIXED) failed at %p: %s\n",
-                page_start, strerror(errno));
-        abort();
-      }
-      memcloud_vm_fetch(region->region_id, page_index, page_start, PAGE_SIZE);
-      region->dirty_bits[page_index] = 1;
-      log_fmt("[memcloud-vm] successfully mapped page at %p (region=%llu)\n",
-              page_start, (unsigned long long)region->region_id);
-    } else {
-      log_msg("[memcloud-vm] FATAL: real_mmap is NULL in handler\n");
-      abort();
-    }
-  } else {
-    pthread_mutex_unlock(&region_mutex);
+  if (!found) {
+    // Not a MemCloud managed region, re-raise
     signal(sig, SIG_DFL);
     raise(sig);
     return;
   }
+
+  log_fmt("[memcloud-vm] Paging fault at %p (page %p, index %lu)\n", fault_addr,
+          page_start, (unsigned long)page_index);
+
+  // 2. Fetch into temporary buffer
+  // Support up to 64KB pages dynamic (most OS are 4K or 16K)
+  uint8_t tmp_page[ps];
+  if (memcloud_vm_fetch(region_id, page_index, tmp_page, ps) <= 0) {
+    // If fetch fails, we zero-fill so the process can at least proceed
+    // (daemon might return error if peer is offline, but we must satisfy the
+    // fault)
+    memset(tmp_page, 0, ps);
+  }
+
+  // 3. Map RW using MAP_FIXED
+  void *res = real_mmap(page_start, ps, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+
+  if (res == MAP_FAILED) {
+    log_fmt("[memcloud-vm] FATAL: mmap(MAP_FIXED) failed at %p: %s\n",
+            page_start, strerror(errno));
+    abort();
+  }
+
+  if (res != page_start) {
+    log_fmt("[memcloud-vm] FATAL: mmap returned addr %p instead of %p\n", res,
+            page_start);
+    abort();
+  }
+
+  // 4. Copy data into memory
+  memcpy(page_start, tmp_page, ps);
+
+  // 5. Update metadata under lock
+  pthread_mutex_lock(&region_mutex);
+  region = find_region(page_start);
+  if (region) {
+    region->dirty_bits[page_index] = 1;
+  }
   pthread_mutex_unlock(&region_mutex);
+
+  log_fmt("[memcloud-vm] successfully serviced fault at %p\n", page_start);
 }
 
 static void *sync_thread(void *arg) {
   while (1) {
     usleep(100000);
+    long ps = sysconf(_SC_PAGESIZE);
     pthread_mutex_lock(&region_mutex);
     if (regions) {
       for (int i = 0; i < MAX_REGIONS; i++) {
         if (regions[i].active) {
-          size_t num_pages = regions[i].size / PAGE_SIZE;
+          size_t num_pages = regions[i].size / ps;
           for (size_t j = 0; j < num_pages; j++) {
             if (regions[i].dirty_bits[j]) {
-              void *p = (void *)((uintptr_t)regions[i].addr + (j * PAGE_SIZE));
-              if (memcloud_vm_store(regions[i].region_id, j, p, PAGE_SIZE) ==
-                  0) {
+              void *p = (void *)((uintptr_t)regions[i].addr + (j * ps));
+              if (memcloud_vm_store(regions[i].region_id, j, p, ps) == 0) {
                 regions[i].dirty_bits[j] = 0;
               }
             }
@@ -454,9 +488,12 @@ static void install_sigsegv_handler() {
   log_fmt("[memcloud-vm] SIGSEGV handler installed (pid=%d)\n", getpid());
 }
 
+extern void memcloud_noop();
+
 __attribute__((constructor)) void init_interceptor() {
   log_msg("[memcloud-vm] constructor start\n");
   symbols_init();
+  memcloud_noop();
   install_sigsegv_handler();
   log_msg("[memcloud-vm] constructor end\n");
 }
