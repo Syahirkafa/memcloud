@@ -32,14 +32,6 @@ pub extern "C" fn memcloud_init() -> c_int {
     })
 }
 
-extern "C" {
-    fn write(fd: i32, buf: *const u8, count: usize) -> isize;
-}
-
-fn raw_log(msg: &str) {
-    unsafe { write(2, msg.as_ptr(), msg.len()); }
-}
-
 #[no_mangle]
 pub extern "C" fn memcloud_init_with_path(socket_path: *const std::os::raw::c_char) -> c_int {
     if socket_path.is_null() {
@@ -51,17 +43,18 @@ pub extern "C" fn memcloud_init_with_path(socket_path: *const std::os::raw::c_ch
         Err(_) => return -1,
     };
 
-    raw_log("[memsdk] init_with_path: entry\n");
+    // Using eprintln! is safe here - we're not in a malloc hook on the Rust side
+    eprintln!("[memsdk] init_with_path: entry");
     RUNTIME.block_on(async {
-        raw_log("[memsdk] init_with_path: in block_on\n");
+        eprintln!("[memsdk] init_with_path: in block_on");
         match MemCloudClient::connect_with_path(path).await {
             Ok(client) => {
-                raw_log("[memsdk] init_with_path: connected\n");
+                eprintln!("[memsdk] init_with_path: connected");
                 *CLIENT.lock().unwrap() = Some(client);
                 0
             }
             Err(_) => {
-                raw_log("[memsdk] init_with_path: connect failed\n");
+                eprintln!("[memsdk] init_with_path: connect failed");
                 -1
             }
         }

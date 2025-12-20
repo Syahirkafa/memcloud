@@ -144,9 +144,13 @@ static void symbols_init() {
     real_mmap = dlsym((void *)0, "mmap");
 
   if (real_mmap && !regions) {
+    long ps = sysconf(_SC_PAGESIZE);
     regions =
         real_mmap(NULL, sizeof(VmRegion) * MAX_REGIONS, PROT_READ | PROT_WRITE,
                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    // Allocate dirty bits pool - enough for 1GB of tracked memory per region is
+    // overkill but safe 1024 regions * (256K pages for 1GB @ 4K page) = large
+    // Let's assume max 1MB dirty bits per region (covers 4GB @ 4K page)
     uint8_t *bits_pool =
         real_mmap(NULL, MAX_REGIONS * (1024 * 1024), PROT_READ | PROT_WRITE,
                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -392,6 +396,7 @@ static void page_fault_handler(int sig, siginfo_t *si, void *ctx_ptr) {
   int found = 0;
 
   // 1. Find region under lock
+  // Only holding lock for metadata lookup
   pthread_mutex_lock(&region_mutex);
   VmRegion *region = find_region(page_start);
   if (region) {
@@ -402,7 +407,7 @@ static void page_fault_handler(int sig, siginfo_t *si, void *ctx_ptr) {
   pthread_mutex_unlock(&region_mutex);
 
   if (!found) {
-    // Not a MemCloud managed region, re-raise
+    // Not a MemCloud managed region, re-raise signal
     signal(sig, SIG_DFL);
     raise(sig);
     return;
@@ -411,17 +416,23 @@ static void page_fault_handler(int sig, siginfo_t *si, void *ctx_ptr) {
   log_fmt("[memcloud-vm] Paging fault at %p (page %p, index %lu)\n", fault_addr,
           page_start, (unsigned long)page_index);
 
-  // 2. Fetch into temporary buffer
-  // Support up to 64KB pages dynamic (most OS are 4K or 16K)
+  // 2. Fetch into temporary buffer BEFORE mapping
+  // This avoids writing into PROT_NONE memory and holding locks during IO
+  // Stack allocate buffer for page (up to 16KB usually)
+  // For VLA usage, if page size is huge it might be risky but on standard
+  // systems it's fine
   uint8_t tmp_page[ps];
-  if (memcloud_vm_fetch(region_id, page_index, tmp_page, ps) <= 0) {
-    // If fetch fails, we zero-fill so the process can at least proceed
-    // (daemon might return error if peer is offline, but we must satisfy the
-    // fault)
+  log_fmt("[memcloud-vm] fetching page %lu from remote\n",
+          (unsigned long)page_index);
+  int fetched = memcloud_vm_fetch(region_id, page_index, tmp_page, ps);
+  if (fetched != ps) {
+    // Fallback: fill with zeros if fetch failed or incomplete
+    // This ensures program stability even if network fails
     memset(tmp_page, 0, ps);
   }
 
   // 3. Map RW using MAP_FIXED
+  // This makes the page writable so we can copy data in
   void *res = real_mmap(page_start, ps, PROT_READ | PROT_WRITE,
                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
 
@@ -431,6 +442,7 @@ static void page_fault_handler(int sig, siginfo_t *si, void *ctx_ptr) {
     abort();
   }
 
+  // Strict verify
   if (res != page_start) {
     log_fmt("[memcloud-vm] FATAL: mmap returned addr %p instead of %p\n", res,
             page_start);
@@ -442,7 +454,7 @@ static void page_fault_handler(int sig, siginfo_t *si, void *ctx_ptr) {
 
   // 5. Update metadata under lock
   pthread_mutex_lock(&region_mutex);
-  region = find_region(page_start);
+  region = find_region(page_start); // Re-find to be safe in case of race/change
   if (region) {
     region->dirty_bits[page_index] = 1;
   }
