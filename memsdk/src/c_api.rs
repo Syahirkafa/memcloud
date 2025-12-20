@@ -13,7 +13,8 @@ lazy_static! {
 
 #[no_mangle]
 pub extern "C" fn memcloud_init() -> c_int {
-    let socket_path = std::env::var("MEMCLOUD_SOCKET").unwrap_or_else(|_| "/tmp/memcloud.sock".to_string());
+    let default_path = if cfg!(windows) { "127.0.0.1:7070" } else { "/tmp/memcloud.sock" };
+    let socket_path = std::env::var("MEMCLOUD_SOCKET").unwrap_or_else(|_| default_path.to_string());
     RUNTIME.block_on(async {
         match MemCloudClient::connect_with_path(&socket_path).await {
             Ok(client) => {

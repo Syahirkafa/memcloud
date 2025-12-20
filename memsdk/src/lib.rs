@@ -166,7 +166,12 @@ impl MemCloudClient {
 
     #[cfg(windows)]
     pub async fn connect() -> Result<Self> {
-        let stream = TcpStream::connect("127.0.0.1:7070").await?;
+        Self::connect_with_path("127.0.0.1:7070").await
+    }
+
+    #[cfg(windows)]
+    pub async fn connect_with_path(path: &str) -> Result<Self> {
+        let stream = TcpStream::connect(path).await?;
         Ok(Self { stream })
     }
 
