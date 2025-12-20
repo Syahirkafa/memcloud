@@ -18,6 +18,8 @@ echo "║               ☁  M E M C L O U D   I N S T A L L E R  ⚡      ║"
 echo "║                                                              ║"
 echo "║     'Turning nearby devices into your personal RAM farm.'    ║"
 echo "║                                                              ║"
+echo "║                    Created by Vibhanshu Garg                 ║"
+echo "║                                                              ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo "${NC}"
 
@@ -97,6 +99,30 @@ echo ""
 log_info "Deploying binaries to /usr/local/bin (root privileges required)..."
 if sudo mv /tmp/memcloud_install/memnode /usr/local/bin/ && sudo mv /tmp/memcloud_install/memcli /usr/local/bin/; then
 
+    # Install VM interceptor and SDK libraries
+    log_info "Installing VM interceptor and SDK libraries..."
+    case "$OS" in
+      Linux)
+        sudo mv /tmp/memcloud_install/libmemcloud_vm.so /usr/local/lib/ 2>/dev/null || true
+        sudo mv /tmp/memcloud_install/libmemsdk.so /usr/local/lib/ 2>/dev/null || true
+        ;;
+      Darwin)
+        sudo mv /tmp/memcloud_install/libmemcloud_vm.dylib /usr/local/lib/ 2>/dev/null || true
+        sudo mv /tmp/memcloud_install/libmemsdk.dylib /usr/local/lib/ 2>/dev/null || true
+        ;;
+    esac
+    
+    # Install C header
+    if [ -f /tmp/memcloud_install/include/memcloud.h ]; then
+        sudo mkdir -p /usr/local/include
+        sudo mv /tmp/memcloud_install/include/memcloud.h /usr/local/include/
+    fi
+    
+    # Update library cache on Linux
+    if [ "$OS" = "Linux" ]; then
+        sudo ldconfig 2>/dev/null || true
+    fi
+
     rm memcloud.tar.gz
     rm -rf /tmp/memcloud_install
 
@@ -109,6 +135,22 @@ if sudo mv /tmp/memcloud_install/memnode /usr/local/bin/ && sudo mv /tmp/memclou
     echo "    Start daemon:   ${CYAN}memcli node start --name \"MyDevice\"${NC}"
     echo "    Check status:   ${CYAN}memcli node status${NC}"
     echo "    Stop daemon:    ${CYAN}memcli node stop${NC}"
+    echo ""
+    echo "  ${GREEN}🔮 VM-Backed Allocation (Remote RAM Pooling):${NC}"
+    if [ "$OS" = "Linux" ]; then
+        echo "    Run any app with remote RAM:"
+        echo "    ${CYAN}LD_PRELOAD=/usr/local/lib/libmemcloud_vm.so <your-command>${NC}"
+        echo ""
+        echo "    Example (llama.cpp):"
+        echo "    ${CYAN}LD_PRELOAD=/usr/local/lib/libmemcloud_vm.so ./llama-cli -m model.gguf${NC}"
+    else
+        echo "    Run any app with remote RAM:"
+        echo "    ${CYAN}DYLD_INSERT_LIBRARIES=/usr/local/lib/libmemcloud_vm.dylib <your-command>${NC}"
+        echo ""
+        echo "    Example:"
+        echo "    ${CYAN}DYLD_INSERT_LIBRARIES=/usr/local/lib/libmemcloud_vm.dylib ./my-app${NC}"
+    fi
+    echo "    Tune threshold: ${CYAN}export MEMCLOUD_VM_THRESHOLD_MB=100${NC}"
     echo ""
     echo "  ${GREEN}📦 Using the JS/TypeScript SDK:${NC}"
     echo "    ${CYAN}npm install memcloud${NC}"
@@ -123,7 +165,8 @@ if sudo mv /tmp/memcloud_install/memnode /usr/local/bin/ && sudo mv /tmp/memclou
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "${MAGENTA}Welcome to the Distributed Memory Future.✨${NC}"
+    echo "${MAGENTA}Welcome to the Distributed Memory Future. ✨${NC}"
+    echo "${CYAN}Created by Vibhanshu Garg${NC}"
 else
     log_error "Binary installation failed — insufficient permissions?"
     exit 1

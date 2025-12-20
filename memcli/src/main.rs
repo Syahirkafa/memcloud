@@ -65,7 +65,7 @@ fn kill_process(pid: i32) -> anyhow::Result<()> {
 }
 
 #[derive(Parser)]
-#[command(author, version, about = "MemCloud CLI - Manage your distributed in-memory data store", long_about = None)]
+#[command(author = "Vibhanshu Garg <v2001.garg@gmail.com>", version, about = "MemCloud CLI - Manage your distributed in-memory data store", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -494,11 +494,15 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
             }
         }
         Commands::Stats => {
-            let (blocks, peers, memory) = client.stats().await?;
+            let (blocks, peers, memory, vm_regions, vm_pages, vm_bytes) = client.stats().await?;
             println!("-------- MemCloud Stats --------");
-            println!("Blocks Stored: {}", blocks);
-            println!("Peers Connected: {}", peers);
-            println!("Memory Usage: {} bytes", memory);
+            println!("Blocks Stored:    {}", blocks);
+            println!("Peers Connected:  {}", peers);
+            println!("Memory Usage:     {}", format_bytes(memory as u64));
+            println!("--------------------------------");
+            println!("Remote VM regions:      {}", vm_regions);
+            println!("Remote VM pages mapped: {}", vm_pages);
+            println!("Remote VM memory in use: {}", format_bytes(vm_bytes as u64));
             println!("--------------------------------");
         }
         Commands::Set { key, value, peer, mode } => {

@@ -16,7 +16,7 @@ struct Args {
     #[arg(short, long, default_value_t = 8080)]
     port: u16,
 
-    #[arg(short, long, default_value_t = 1024 * 1024 * 1024)] // 1GB default
+    #[arg(short, long, value_parser = memsdk::parse_size, default_value = "1gb")]
     memory: u64,
 
     #[arg(long, default_value = "/tmp/memcloud.sock")]

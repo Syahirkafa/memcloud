@@ -18,6 +18,8 @@ echo "║        ⛅  M E M C L O U D   U N I N S T A L L E R  🧹        ║"
 echo "║                                                              ║"
 echo "║      'Borrowed RAM is returned... balance restored.'         ║"
 echo "║                                                              ║"
+echo "║                    Created by Vibhanshu Garg                 ║"
+echo "║                                                              ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo "${NC}"
 
@@ -87,6 +89,26 @@ remove_binary() {
 remove_binary "memnode"
 remove_binary "memcli"
 
+# Remove VM interceptor and SDK libraries
+log_info "Removing VM interceptor and SDK libraries..."
+OS="$(uname -s)"
+case "$OS" in
+  Linux)
+    sudo rm -f /usr/local/lib/libmemcloud_vm.so 2>/dev/null || true
+    sudo rm -f /usr/local/lib/libmemsdk.so 2>/dev/null || true
+    ;;
+  Darwin)
+    sudo rm -f /usr/local/lib/libmemcloud_vm.dylib 2>/dev/null || true
+    sudo rm -f /usr/local/lib/libmemsdk.dylib 2>/dev/null || true
+    ;;
+esac
+sudo rm -f /usr/local/include/memcloud.h 2>/dev/null || true
+
+# Update library cache on Linux
+if [ "$OS" = "Linux" ]; then
+    sudo ldconfig 2>/dev/null || true
+fi
+
 
 # Remove Unix socket
 if [ -S /tmp/memcloud.sock ]; then
@@ -113,4 +135,5 @@ echo "If you were using the JS SDK, remove it with:"
 echo "  ${CYAN}npm uninstall memcloud${NC}"
 echo ""
 echo "${MAGENTA}Thanks for trying MemCloud — see you in the distributed future!${NC}"
+echo "${CYAN}Created by Vibhanshu Garg${NC}"
 echo ""

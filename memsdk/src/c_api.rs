@@ -89,3 +89,61 @@ pub extern "C" fn memcloud_free(id: u64) -> c_int {
         }
     })
 }
+
+#[no_mangle]
+pub extern "C" fn memcloud_vm_alloc(size: u64, out_region_id: *mut u64) -> c_int {
+    if out_region_id.is_null() { return -1; }
+    RUNTIME.block_on(async {
+        let mut guard = CLIENT.lock().unwrap();
+        if let Some(client) = &mut *guard {
+            match client.vm_alloc(size).await {
+                Ok(id) => {
+                    unsafe { *out_region_id = id };
+                    0
+                }
+                Err(_) => -2,
+            }
+        } else {
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn memcloud_vm_fetch(region_id: u64, page_index: u64, out_buffer: *mut c_void, buffer_size: usize) -> c_int {
+    if out_buffer.is_null() { return -1; }
+    RUNTIME.block_on(async {
+        let mut guard = CLIENT.lock().unwrap();
+        if let Some(client) = &mut *guard {
+            match client.vm_fetch(region_id, page_index).await {
+                Ok(data) => {
+                    if data.len() > buffer_size { return -3; }
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(data.as_ptr(), out_buffer as *mut u8, data.len());
+                    }
+                    data.len() as c_int
+                }
+                Err(_) => -2,
+            }
+        } else {
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn memcloud_vm_store(region_id: u64, page_index: u64, data: *const c_void, size: usize) -> c_int {
+    if data.is_null() { return -1; }
+    let slice = unsafe { std::slice::from_raw_parts(data as *const u8, size) };
+    RUNTIME.block_on(async {
+        let mut guard = CLIENT.lock().unwrap();
+        if let Some(client) = &mut *guard {
+            match client.vm_store(region_id, page_index, slice.to_vec()).await {
+                Ok(_) => 0,
+                Err(_) => -2,
+            }
+        } else {
+            -1
+        }
+    })
+}

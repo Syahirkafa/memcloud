@@ -27,13 +27,21 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
+      - name: Build Interceptor
+        run: |
+          clang -shared -fPIC -o target/${{ matrix.target }}/release/libmemcloud_vm.dylib interceptor/memcloud_vm.c \
+            -Ltarget/${{ matrix.target }}/release -lmemsdk -Iinclude -lpthread -ldl
+
       - name: Package
         run: |
-          mkdir -p dist
+          mkdir -p dist/include
           cp target/${{ matrix.target }}/release/memnode dist/memnode
           cp target/${{ matrix.target }}/release/memcli dist/memcli
+          cp target/${{ matrix.target }}/release/libmemsdk.dylib dist/
+          cp target/${{ matrix.target }}/release/libmemcloud_vm.dylib dist/
+          cp include/memcloud.h dist/include/
           cd dist
-          tar -czf ../memcloud-${{ matrix.target }}.tar.gz memnode memcli
+          tar -czf ../memcloud-${{ matrix.target }}.tar.gz .
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
@@ -85,13 +93,21 @@ jobs:
       - name: Build Release Binary
         run: cargo build --release
 
+      - name: Build Interceptor
+        run: |
+          clang -shared -fPIC -o target/release/libmemcloud_vm.so interceptor/memcloud_vm.c \
+            -Ltarget/release -lmemsdk -Iinclude -lpthread -ldl
+
       - name: Package Tarball
         run: |
-          mkdir -p dist
+          mkdir -p dist/include
           cp target/release/memnode dist/memnode
           cp target/release/memcli dist/memcli
+          cp target/release/libmemsdk.so dist/
+          cp target/release/libmemcloud_vm.so dist/
+          cp include/memcloud.h dist/include/
           cd dist
-          tar -czf ../memcloud-x86_64-unknown-linux-gnu.tar.gz memnode memcli
+          tar -czf ../memcloud-x86_64-unknown-linux-gnu.tar.gz .
 
       - name: Release
         uses: softprops/action-gh-release@v1

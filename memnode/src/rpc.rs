@@ -245,18 +245,22 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                 let keys = block_manager.list_keys(&pattern);
                 SdkResponse::List { items: keys }
             }
-            SdkCommand::Stat => {
-                 // Get real stats
-                 let blocks_count = block_manager.blocks.len();
-                 let peers_count = block_manager.get_peer_list().len();
-                 let memory = block_manager.used_space() as usize;
-
-                 SdkResponse::Status { 
-                     blocks: blocks_count, 
-                     peers: peers_count, 
-                     memory_usage: memory,
-                 }
-            }
+             SdkCommand::Stat => {
+                  let blocks_count = block_manager.blocks.len();
+                  let peers_count = block_manager.get_peer_list().len();
+                  let memory = block_manager.used_space() as usize;
+                  
+                  let (vm_regions, vm_pages) = block_manager.vm_manager.get_stats();
+ 
+                  SdkResponse::Status { 
+                      blocks: blocks_count, 
+                      peers: peers_count, 
+                      memory_usage: memory,
+                      vm_regions,
+                      vm_pages_mapped: vm_pages,
+                      vm_memory_in_use: vm_pages * 4096,
+                  }
+             }
             // Streaming Handlers
             SdkCommand::StreamStart { size_hint } => {
                 let stream_id = block_manager.start_stream(size_hint);
@@ -369,6 +373,22 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                      Ok(_) => SdkResponse::Success,
                      Err(e) => SdkResponse::Error { msg: e.to_string() },
                  }
+            }
+            SdkCommand::VmAlloc { size } => {
+                let region_id = block_manager.vm_alloc(size);
+                SdkResponse::VmCreated { region_id }
+            }
+            SdkCommand::VmFetch { region_id, page_index } => {
+                match block_manager.vm_fetch(region_id, page_index).await {
+                    Ok(data) => SdkResponse::PageData { data },
+                    Err(e) => SdkResponse::Error { msg: e.to_string() },
+                }
+            }
+            SdkCommand::VmStore { region_id, page_index, data } => {
+                match block_manager.vm_store(region_id, page_index, data).await {
+                    Ok(_) => SdkResponse::Success,
+                    Err(e) => SdkResponse::Error { msg: e.to_string() },
+                }
             }
         };
 

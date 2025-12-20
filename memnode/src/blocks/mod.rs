@@ -6,6 +6,8 @@ use std::sync::Arc;
 use log::info;
 use crate::peers::PeerManager;
 use crate::net::Message;
+pub mod vm;
+use self::vm::VmRegionManager;
 
 #[derive(Debug, Clone)]
 pub struct Block {
@@ -36,6 +38,7 @@ pub struct InMemoryBlockManager {
     max_memory: u64,
     // Streaming partial uploads
     active_uploads: Arc<DashMap<u64, Vec<u8>>>,
+    pub vm_manager: Arc<VmRegionManager>,
 }
 
 impl InMemoryBlockManager {
@@ -48,6 +51,7 @@ impl InMemoryBlockManager {
             current_memory: Arc::new(AtomicU64::new(0)),
             max_memory,
             active_uploads: Arc::new(DashMap::new()),
+            vm_manager: Arc::new(VmRegionManager::new()),
         }
     }
 
@@ -364,14 +368,44 @@ impl InMemoryBlockManager {
     pub fn get_max_memory(&self) -> u64 {
         self.max_memory
     }
-}
 
-// We need async for remote, but the trait is synchronous for now.
-// For the MVP, we might compromise or specificy async trait.
-// Since we want to update the trait, let's stick to local usage for trait compliance
-// and handle remote via specific cast or async channel in a better design.
-// BUT for this task, I will just impl the standard put/get to be local, 
-// and add specific logic for the DEMO to use the remote path.
+    pub fn vm_alloc(&self, size: u64) -> u64 {
+        self.vm_manager.create_region(size)
+    }
+
+    pub async fn vm_fetch(&self, region_id: u64, page_index: u64) -> Result<Vec<u8>> {
+        let region = self.vm_manager.get_region(region_id).ok_or_else(|| anyhow::anyhow!("Region not found"))?;
+        let block_id_opt = region.pages.get(&page_index).map(|v| *v);
+        if let Some(block_id) = block_id_opt {
+            match self.get_block_async(block_id).await? {
+                Some(block) => Ok(block.data),
+                None => anyhow::bail!("Page data lost (block {} not found)", block_id),
+            }
+        } else {
+            Ok(vec![0u8; 4096])
+        }
+    }
+
+    pub async fn vm_store(&self, region_id: u64, page_index: u64, data: Vec<u8>) -> Result<()> {
+        let region = self.vm_manager.get_region(region_id).ok_or_else(|| anyhow::anyhow!("Region not found"))?;
+        
+        let id = rand::random::<u64>();
+        let block = Block {
+            id,
+            data,
+            durability: memsdk::Durability::Pinned,
+            last_accessed: Arc::new(AtomicU64::new(0)),
+        };
+
+        if let Err(e) = self.put_block_remote(block.clone(), None).await {
+            log::warn!("Failed to store VM page remote: {}. Storing locally.", e);
+            self.put_block(block)?;
+        }
+
+        region.pages.insert(page_index, id);
+        Ok(())
+    }
+}
 
 impl BlockManager for InMemoryBlockManager {
     fn put_block(&self, block: Block) -> Result<()> {

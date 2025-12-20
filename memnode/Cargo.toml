@@ -39,6 +39,8 @@ section = "utils"
 priority = "optional"
 assets = [
     ["target/release/memnode", "usr/bin/", "755"],
+    ["target/release/libmemcloud_vm.so", "usr/lib/", "644"],
+    ["../include/memcloud.h", "usr/include/", "644"],
     ["../installers/linux/memcloud.service", "lib/systemd/system/", "644"]
 ]
 extended-description = """\

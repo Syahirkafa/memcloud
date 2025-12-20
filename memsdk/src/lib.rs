@@ -77,6 +77,10 @@ pub enum SdkCommand {
     StreamChunk { stream_id: u64, chunk_seq: u32, #[serde(with = "serde_bytes")] data: Vec<u8> },
     StreamFinish { stream_id: u64, target: Option<String>, durability: Option<Durability> },
     Flush { target: Option<String> },
+    // VM Allocation & Paging
+    VmAlloc { size: u64 },
+    VmFetch { region_id: u64, page_index: u64 },
+    VmStore { region_id: u64, page_index: u64, #[serde(with = "serde_bytes")] data: Vec<u8> },
     // Trust & Consent
     TrustList,
     TrustRemove { key_or_name: String },
@@ -122,12 +126,21 @@ pub enum SdkResponse {
     PeerList { peers: Vec<PeerMetadata> },
     PeerConnected { metadata: PeerMetadata },
     Error { msg: String },
-    Status { blocks: usize, peers: usize, memory_usage: usize },
+    Status { 
+        blocks: usize, 
+        peers: usize, 
+        memory_usage: usize,
+        vm_regions: usize,
+        vm_pages_mapped: usize,
+        vm_memory_in_use: usize,
+    },
     StreamStarted { stream_id: u64 },
     FlushSuccess,
     TrustedList { items: Vec<TrustedDevice> },
     ConsentList { items: Vec<PendingConsent> },
     ConnectionStatus { state: String, msg: Option<String> },
+    VmCreated { region_id: u64 },
+    PageData { #[serde(with = "serde_bytes")] data: Vec<u8> },
 }
 
 #[cfg(unix)]
@@ -293,10 +306,11 @@ impl MemCloudClient {
         }
     }
 
-    pub async fn stats(&mut self) -> Result<(usize, usize, usize)> {
+    pub async fn stats(&mut self) -> Result<(usize, usize, usize, usize, usize, usize)> {
         let cmd = SdkCommand::Stat;
         match self.send_command(cmd).await? {
-            SdkResponse::Status { blocks, peers, memory_usage } => Ok((blocks, peers, memory_usage)),
+            SdkResponse::Status { blocks, peers, memory_usage, vm_regions, vm_pages_mapped, vm_memory_in_use } => 
+                Ok((blocks, peers, memory_usage, vm_regions, vm_pages_mapped, vm_memory_in_use)),
             SdkResponse::Error { msg } => anyhow::bail!(msg),
             _ => anyhow::bail!("Unexpected response"),
         }
@@ -352,6 +366,34 @@ impl MemCloudClient {
             _ => anyhow::bail!("Unexpected response to StreamFinish"),
         }
     }
+
+    pub async fn vm_alloc(&mut self, size: u64) -> Result<u64> {
+        let cmd = SdkCommand::VmAlloc { size };
+        match self.send_command(cmd).await? {
+            SdkResponse::VmCreated { region_id } => Ok(region_id),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response to VmAlloc"),
+        }
+    }
+
+    pub async fn vm_fetch(&mut self, region_id: u64, page_index: u64) -> Result<Vec<u8>> {
+        let cmd = SdkCommand::VmFetch { region_id, page_index };
+        match self.send_command(cmd).await? {
+            SdkResponse::PageData { data } => Ok(data),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response to VmFetch"),
+        }
+    }
+
+    pub async fn vm_store(&mut self, region_id: u64, page_index: u64, data: Vec<u8>) -> Result<()> {
+        let cmd = SdkCommand::VmStore { region_id, page_index, data };
+        match self.send_command(cmd).await? {
+            SdkResponse::Success => Ok(()),
+            SdkResponse::Error { msg } => anyhow::bail!(msg),
+            _ => anyhow::bail!("Unexpected response to VmStore"),
+        }
+    }
+
     // Trust API
     pub async fn list_trusted(&mut self) -> Result<Vec<TrustedDevice>> {
         let cmd = SdkCommand::TrustList;
