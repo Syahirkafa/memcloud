@@ -7,7 +7,10 @@ use lazy_static::lazy_static;
 
 // Global runtime for C API to execute async tasks
 lazy_static! {
-    static ref RUNTIME: Runtime = Runtime::new().unwrap();
+    static ref RUNTIME: Runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
     static ref CLIENT: Mutex<Option<MemCloudClient>> = Mutex::new(None);
 }
 
@@ -37,6 +40,7 @@ pub extern "C" fn memcloud_init_with_path(socket_path: *const std::os::raw::c_ch
         Err(_) => return -1,
     };
 
+    // No println! in interceptor path to avoid deadlocks
     RUNTIME.block_on(async {
         match MemCloudClient::connect_with_path(path).await {
             Ok(client) => {

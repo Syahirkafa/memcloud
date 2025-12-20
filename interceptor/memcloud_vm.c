@@ -6,6 +6,7 @@
 #include <inttypes.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,8 +60,24 @@ static VmRegion *regions = NULL;
 static pthread_mutex_t region_mutex = PTHREAD_MUTEX_INITIALIZER;
 static __thread int in_hook = 0;
 static int initialized = 0;
+static int initializing = 0;
+static int symbols_initialized = 0;
+static int sdk_initialized = 0;
 
-static void log_msg(const char *msg) { write(2, msg, strlen(msg)); }
+static void log_msg(const char *msg) {
+  if (msg)
+    write(2, msg, strlen(msg));
+}
+
+static void log_fmt(const char *fmt, ...) {
+  char buf[512];
+  va_list args;
+  va_start(args, fmt);
+  int n = vsnprintf(buf, sizeof(buf), fmt, args);
+  va_end(args);
+  if (n > 0)
+    write(2, buf, n);
+}
 
 #ifdef __APPLE__
 struct interpose_s {
@@ -98,7 +115,6 @@ static void internal_free(void *p) {
   malloc_zone_free(malloc_default_zone(), p);
 }
 #else
-#define HOOK(name) name
 static void *(*real_malloc)(size_t) = NULL;
 static void *(*real_calloc)(size_t, size_t) = NULL;
 static void *(*real_realloc)(void *, size_t) = NULL;
@@ -107,15 +123,15 @@ static void (*real_free)(void *) = NULL;
 #define internal_calloc real_calloc
 #define internal_realloc real_realloc
 #define internal_free real_free
+#define HOOK(name) name
 #endif
 
 static void page_fault_handler(int sig, siginfo_t *si, void *ctx_ptr);
 static void *sync_thread(void *arg);
 
-static void lazy_init() {
-  if (initialized)
+static void symbols_init() {
+  if (symbols_initialized)
     return;
-  initialized = 1;
 
 #ifndef __APPLE__
   real_malloc = dlsym(RTLD_NEXT, "malloc");
@@ -124,8 +140,10 @@ static void lazy_init() {
   real_free = dlsym(RTLD_NEXT, "free");
 #endif
   real_mmap = dlsym(RTLD_NEXT, "mmap");
+  if (!real_mmap)
+    real_mmap = dlsym((void *)0, "mmap");
 
-  if (real_mmap) {
+  if (real_mmap && !regions) {
     regions =
         real_mmap(NULL, sizeof(VmRegion) * MAX_REGIONS, PROT_READ | PROT_WRITE,
                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -139,8 +157,14 @@ static void lazy_init() {
       }
     }
   }
+  symbols_initialized = 1;
+}
 
-  // Signal handlers are now installed in the constructor (init_interceptor)
+static void lazy_init() {
+  symbols_init();
+  if (sdk_initialized || initializing)
+    return;
+  initializing = 1;
 
   pthread_t th;
   pthread_create(&th, NULL, sync_thread, NULL);
@@ -151,7 +175,12 @@ static void lazy_init() {
     vm_threshold = (size_t)atoll(env) * 1024 * 1024;
 
   const char *sock = getenv("MEMCLOUD_SOCKET");
+  log_msg("[memcloud-vm] lazy_init: calling memcloud_init\n");
   memcloud_init_with_path(sock ? sock : "/tmp/memcloud.sock");
+
+  sdk_initialized = 1;
+  initializing = 0;
+  initialized = 1;
   log_msg("[memcloud-vm] lazy init complete\n");
 }
 
@@ -187,19 +216,14 @@ static void *allocate_remote_region(size_t size) {
   if (addr == MAP_FAILED)
     return NULL;
 
-  // HARD ASSERT: Verify memory is truly PROT_NONE
-  // We cannot read/write it, so we verify via mprotect return value
-  // If we can successfully mprotect to PROT_NONE, it means it wasn't already
-  // (This is a no-op if already PROT_NONE, but confirms the mapping exists)
   if (mprotect(addr, PAGE_SIZE, PROT_NONE) != 0) {
-    fprintf(stderr, "[memcloud-vm] FATAL: mprotect(PROT_NONE) failed: %s\n",
+    log_fmt("[memcloud-vm] FATAL: mprotect(PROT_NONE) failed: %s\n",
             strerror(errno));
     munmap(addr, size);
     return NULL;
   }
 
-  fprintf(stderr,
-          "[memcloud-vm] DEBUG: allocated PROT_NONE region at %p (size=%zu)\n",
+  log_fmt("[memcloud-vm] DEBUG: allocated PROT_NONE region at %p (size=%zu)\n",
           addr, size);
 
   pthread_mutex_lock(&region_mutex);
@@ -240,25 +264,19 @@ void *HOOK(malloc)(size_t size) {
     return internal_malloc(size);
   in_hook = 1;
   lazy_init();
-
   void *res = NULL;
-  if (size >= vm_threshold) {
+  if (size >= vm_threshold && sdk_initialized) {
     res = allocate_remote_region(size);
     if (!res) {
-      // HARD FAILURE: No RW fallback allowed for large allocations
-      fprintf(stderr,
-              "[memcloud-vm] FATAL: VM allocation failed for %zu bytes. "
-              "Aborting (no RW fallback).\n",
+      log_fmt("[memcloud-vm] FATAL: VM allocation failed for %zu bytes. "
+              "Aborting.\n",
               size);
       abort();
     }
-    // Return PROT_NONE memory directly - no fallback
     in_hook = 0;
     return res;
   }
-  // Small allocations use normal malloc
   res = internal_malloc(size);
-
   in_hook = 0;
   return res;
 }
@@ -268,26 +286,20 @@ void *HOOK(calloc)(size_t nmemb, size_t size) {
     return internal_calloc(nmemb, size);
   in_hook = 1;
   lazy_init();
-
   size_t total = nmemb * size;
   void *res = NULL;
-  if (total >= vm_threshold) {
+  if (total >= vm_threshold && sdk_initialized) {
     res = allocate_remote_region(total);
-    // No memset - pages fault lazily on access.
-    // Daemon returns zeros for uninitialized pages.
     if (!res) {
-      fprintf(stderr,
-              "[memcloud-vm] FATAL: VM allocation failed for %zu bytes "
-              "(calloc). Aborting (no RW fallback).\n",
+      log_fmt("[memcloud-vm] FATAL: VM allocation failed for %zu bytes "
+              "(calloc). Aborting.\n",
               total);
       abort();
     }
     in_hook = 0;
     return res;
   }
-  // Small allocations use normal calloc
   res = internal_calloc(nmemb, size);
-
   in_hook = 0;
   return res;
 }
@@ -297,32 +309,28 @@ void *HOOK(realloc)(void *ptr, size_t size) {
     return internal_realloc(ptr, size);
   in_hook = 1;
   lazy_init();
-
   if (!ptr) {
     void *r = HOOK(malloc)(size);
     in_hook = 0;
     return r;
   }
-
   pthread_mutex_lock(&region_mutex);
   VmRegion *reg = find_region_exact(ptr);
   if (reg) {
     pthread_mutex_unlock(&region_mutex);
     void *new_p = NULL;
-    if (size >= vm_threshold) {
+    if (size >= vm_threshold && sdk_initialized) {
       new_p = allocate_remote_region(size);
       if (!new_p) {
-        fprintf(stderr,
-                "[memcloud-vm] FATAL: VM realloc failed for %zu bytes. "
-                "Aborting (no RW fallback).\n",
-                size);
+        log_fmt(
+            "[memcloud-vm] FATAL: VM realloc failed for %zu bytes. Aborting.\n",
+            size);
         abort();
       }
       size_t c = (size < reg->size) ? size : reg->size;
       memcpy(new_p, ptr, c);
       free_remote_region(ptr);
     } else {
-      // Downsizing below threshold - copy to local memory
       new_p = internal_malloc(size);
       if (new_p) {
         size_t c = (size < reg->size) ? size : reg->size;
@@ -334,18 +342,16 @@ void *HOOK(realloc)(void *ptr, size_t size) {
     return new_p;
   }
   pthread_mutex_unlock(&region_mutex);
-
   void *res = NULL;
-  if (size >= vm_threshold) {
+  if (size >= vm_threshold && sdk_initialized) {
     res = allocate_remote_region(size);
     if (!res) {
-      fprintf(stderr,
-              "[memcloud-vm] FATAL: VM realloc failed for %zu bytes. "
-              "Aborting (no RW fallback).\n",
-              size);
+      log_fmt(
+          "[memcloud-vm] FATAL: VM realloc failed for %zu bytes. Aborting.\n",
+          size);
       abort();
     }
-    size_t old_s = size;
+    size_t old_s;
 #ifdef __APPLE__
     old_s = malloc_size(ptr);
 #else
@@ -357,9 +363,7 @@ void *HOOK(realloc)(void *ptr, size_t size) {
     in_hook = 0;
     return res;
   }
-  // Small realloc - use normal realloc
   res = internal_realloc(ptr, size);
-
   in_hook = 0;
   return res;
 }
@@ -378,25 +382,33 @@ void HOOK(free)(void *ptr) {
 }
 
 static void page_fault_handler(int sig, siginfo_t *si, void *ctx_ptr) {
-  fprintf(stderr, "[memcloud-vm] SIGSEGV received at address=%p\n",
-          si->si_addr);
   void *fault_addr = si->si_addr;
+  void *page_start = (void *)((uintptr_t)fault_addr & ~(PAGE_SIZE - 1));
+
   pthread_mutex_lock(&region_mutex);
-  VmRegion *region = find_region(fault_addr);
+  VmRegion *region = find_region(page_start);
   if (region) {
+    log_fmt("[memcloud-vm] mapping page at %p\n", page_start);
     uintptr_t page_index =
-        ((uintptr_t)fault_addr - (uintptr_t)region->addr) / PAGE_SIZE;
-    void *page_start =
-        (void *)((uintptr_t)region->addr + (page_index * PAGE_SIZE));
-    // Use real_mmap directly in signal handler
+        ((uintptr_t)page_start - (uintptr_t)region->addr) / PAGE_SIZE;
+
     if (real_mmap) {
-      real_mmap(page_start, PAGE_SIZE, PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+      if (real_mmap(page_start, PAGE_SIZE, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1,
+                    0) == MAP_FAILED) {
+        log_fmt("[memcloud-vm] FATAL: mmap(MAP_FIXED) failed at %p: %s\n",
+                page_start, strerror(errno));
+        abort();
+      }
       memcloud_vm_fetch(region->region_id, page_index, page_start, PAGE_SIZE);
       region->dirty_bits[page_index] = 1;
+      log_fmt("[memcloud-vm] successfully mapped page at %p (region=%llu)\n",
+              page_start, (unsigned long long)region->region_id);
+    } else {
+      log_msg("[memcloud-vm] FATAL: real_mmap is NULL in handler\n");
+      abort();
     }
   } else {
-    // Re-raise with correct signal type (SIGSEGV or SIGBUS)
     pthread_mutex_unlock(&region_mutex);
     signal(sig, SIG_DFL);
     raise(sig);
@@ -439,10 +451,12 @@ static void install_sigsegv_handler() {
 #ifdef __APPLE__
   sigaction(SIGBUS, &sa, NULL);
 #endif
-  fprintf(stderr, "[memcloud-vm] SIGSEGV handler installed (pid=%d)\n",
-          getpid());
+  log_fmt("[memcloud-vm] SIGSEGV handler installed (pid=%d)\n", getpid());
 }
 
 __attribute__((constructor)) void init_interceptor() {
+  log_msg("[memcloud-vm] constructor start\n");
+  symbols_init();
   install_sigsegv_handler();
+  log_msg("[memcloud-vm] constructor end\n");
 }
