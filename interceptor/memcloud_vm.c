@@ -194,6 +194,21 @@ static void *allocate_remote_region(size_t size) {
   if (addr == MAP_FAILED)
     return NULL;
 
+  // HARD ASSERT: Verify memory is truly PROT_NONE
+  // We cannot read/write it, so we verify via mprotect return value
+  // If we can successfully mprotect to PROT_NONE, it means it wasn't already
+  // (This is a no-op if already PROT_NONE, but confirms the mapping exists)
+  if (mprotect(addr, PAGE_SIZE, PROT_NONE) != 0) {
+    fprintf(stderr, "[memcloud-vm] FATAL: mprotect(PROT_NONE) failed: %s\n",
+            strerror(errno));
+    munmap(addr, size);
+    return NULL;
+  }
+
+  fprintf(stderr,
+          "[memcloud-vm] DEBUG: allocated PROT_NONE region at %p (size=%zu)\n",
+          addr, size);
+
   pthread_mutex_lock(&region_mutex);
   for (int i = 0; i < MAX_REGIONS; i++) {
     if (!regions[i].active) {
@@ -237,16 +252,19 @@ void *HOOK(malloc)(size_t size) {
   if (size >= vm_threshold) {
     res = allocate_remote_region(size);
     if (!res) {
-      // INVARIANT VIOLATION: VM allocation failed for large request
-      // Log loudly before falling back to local memory
+      // HARD FAILURE: No RW fallback allowed for large allocations
       fprintf(stderr,
-              "[memcloud-vm] WARNING: VM allocation failed for %zu bytes. "
-              "Falling back to local malloc (no remote paging).\n",
+              "[memcloud-vm] FATAL: VM allocation failed for %zu bytes. "
+              "Aborting (no RW fallback).\n",
               size);
+      abort();
     }
+    // Return PROT_NONE memory directly - no fallback
+    in_hook = 0;
+    return res;
   }
-  if (!res)
-    res = internal_malloc(size);
+  // Small allocations use normal malloc
+  res = internal_malloc(size);
 
   in_hook = 0;
   return res;
@@ -266,13 +284,16 @@ void *HOOK(calloc)(size_t nmemb, size_t size) {
     // Daemon returns zeros for uninitialized pages.
     if (!res) {
       fprintf(stderr,
-              "[memcloud-vm] WARNING: VM allocation failed for %zu bytes "
-              "(calloc). Falling back to local calloc.\n",
+              "[memcloud-vm] FATAL: VM allocation failed for %zu bytes "
+              "(calloc). Aborting (no RW fallback).\n",
               total);
+      abort();
     }
+    in_hook = 0;
+    return res;
   }
-  if (!res)
-    res = internal_calloc(nmemb, size);
+  // Small allocations use normal calloc
+  res = internal_calloc(nmemb, size);
 
   in_hook = 0;
   return res;
@@ -297,18 +318,18 @@ void *HOOK(realloc)(void *ptr, size_t size) {
     void *new_p = NULL;
     if (size >= vm_threshold) {
       new_p = allocate_remote_region(size);
-      if (new_p) {
-        size_t c = (size < reg->size) ? size : reg->size;
-        memcpy(new_p, ptr, c);
-        free_remote_region(ptr);
-      } else {
+      if (!new_p) {
         fprintf(stderr,
-                "[memcloud-vm] WARNING: VM realloc failed for %zu bytes. "
-                "Falling back to local memory.\n",
+                "[memcloud-vm] FATAL: VM realloc failed for %zu bytes. "
+                "Aborting (no RW fallback).\n",
                 size);
+        abort();
       }
-    }
-    if (!new_p) {
+      size_t c = (size < reg->size) ? size : reg->size;
+      memcpy(new_p, ptr, c);
+      free_remote_region(ptr);
+    } else {
+      // Downsizing below threshold - copy to local memory
       new_p = internal_malloc(size);
       if (new_p) {
         size_t c = (size < reg->size) ? size : reg->size;
@@ -324,25 +345,27 @@ void *HOOK(realloc)(void *ptr, size_t size) {
   void *res = NULL;
   if (size >= vm_threshold) {
     res = allocate_remote_region(size);
-    if (res) {
-      size_t old_s = size;
-#ifdef __APPLE__
-      old_s = malloc_size(ptr);
-#else
-      old_s = malloc_usable_size(ptr);
-#endif
-      size_t c = (size < old_s) ? size : old_s;
-      memcpy(res, ptr, c);
-      internal_free(ptr);
-    } else {
+    if (!res) {
       fprintf(stderr,
-              "[memcloud-vm] WARNING: VM realloc failed for %zu bytes. "
-              "Falling back to local memory.\n",
+              "[memcloud-vm] FATAL: VM realloc failed for %zu bytes. "
+              "Aborting (no RW fallback).\n",
               size);
+      abort();
     }
+    size_t old_s = size;
+#ifdef __APPLE__
+    old_s = malloc_size(ptr);
+#else
+    old_s = malloc_usable_size(ptr);
+#endif
+    size_t c = (size < old_s) ? size : old_s;
+    memcpy(res, ptr, c);
+    internal_free(ptr);
+    in_hook = 0;
+    return res;
   }
-  if (!res)
-    res = internal_realloc(ptr, size);
+  // Small realloc - use normal realloc
+  res = internal_realloc(ptr, size);
 
   in_hook = 0;
   return res;
