@@ -30,6 +30,7 @@ jobs:
       - name: Build Interceptor
         run: |
           clang -shared -fPIC -o target/${{ matrix.target }}/release/libmemcloud_vm.dylib interceptor/memcloud_vm.c \
+            -target ${{ matrix.target }} \
             -Ltarget/${{ matrix.target }}/release -lmemsdk -Iinclude -lpthread -ldl
 
       - name: Package
@@ -84,19 +85,19 @@ jobs:
       - name: Install cargo-deb
         run: cargo install cargo-deb
 
+      - name: Build Release Binary
+        run: cargo build --release
+
+      - name: Build Interceptor (before deb packaging)
+        run: |
+          clang -shared -fPIC -o target/release/libmemcloud_vm.so interceptor/memcloud_vm.c \
+            -Ltarget/release -lmemsdk -Iinclude -lpthread -ldl
+
       - name: Build and Package (memnode)
         run: cargo deb -p memnode
 
       - name: Build and Package (memcli)
         run: cargo deb -p memcli
-
-      - name: Build Release Binary
-        run: cargo build --release
-
-      - name: Build Interceptor
-        run: |
-          clang -shared -fPIC -o target/release/libmemcloud_vm.so interceptor/memcloud_vm.c \
-            -Ltarget/release -lmemsdk -Iinclude -lpthread -ldl
 
       - name: Package Tarball
         run: |
