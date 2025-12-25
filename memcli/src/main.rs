@@ -110,9 +110,10 @@ enum Commands {
     Peers,
     Connect {
         addr: String,
-        /// Optional: RAM quota to offer (e.g., "512mb", "1gb")
-        #[arg(long)]
-        quota: Option<String>,
+        /// How much of YOUR memory capacity to offer this peer (e.g., "512mb", "1gb")
+        /// This is the maximum they can store on your node.
+        #[arg(long, short = 'o')]
+        offer_storage: Option<String>,
     },
     /// Show memory usage and stats
     Stats {
@@ -209,6 +210,10 @@ enum NodeAction {
         /// Port for peer-to-peer communication
         #[arg(long, short, default_value_t = 8080)]
         port: u16,
+        /// Total memory capacity this node allocates for the network (e.g., "4gb", "512mb")
+        /// This is the hard limit for ALL storage combined.
+        #[arg(long, short = 'm', default_value = "1gb")]
+        total_memory: String,
     },
     /// Stop the running MemCloud node daemon
     Stop,
@@ -221,8 +226,9 @@ enum PeerAction {
     List,
     Update {
         id: String,
-        #[arg(long)]
-        quota: String,
+        /// New storage limit you ALLOW this peer to use on your node (e.g. "1gb")
+        #[arg(long, short = 'a')]
+        allowed_storage: String,
     },
     Disconnect {
         id: String,
@@ -295,7 +301,7 @@ fn handle_node_action(action: NodeAction) -> anyhow::Result<()> {
     let log_file_path = memcloud_dir.join("memnode.log");
 
     match action {
-        NodeAction::Start { name, port } => {
+        NodeAction::Start { name, port, total_memory } => {
             // Check if already running
             if let Some(pid) = read_pid() {
                 if is_process_running(pid) {
@@ -345,7 +351,7 @@ fn handle_node_action(action: NodeAction) -> anyhow::Result<()> {
             println!("🚀 Starting MemCloud node '{}' on port {}...", final_name, port);
             
             let child = Command::new("memnode")
-                .args(["--name", &final_name, "--port", &port.to_string()])
+                .args(["--name", &final_name, "--port", &port.to_string(), "--memory", &total_memory])
                 .stdin(Stdio::null())
                 .stdout(Stdio::from(log_file.try_clone()?))
                 .stderr(Stdio::from(log_file))
@@ -442,10 +448,10 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
         Commands::Peer { action } => {
             match action {
                 PeerAction::List => handle_peer_list(client).await?,
-                PeerAction::Update { id, quota } => {
-                    let quota_bytes = memsdk::parse_size(&quota)?;
+                PeerAction::Update { id, allowed_storage } => {
+                    let quota_bytes = memsdk::parse_size(&allowed_storage)?;
                     client.update_peer_quota(&id, quota_bytes).await?;
-                    println!("Updated peer {} quota to {} bytes", id, quota_bytes);
+                    println!("Updated peer {} allowed storage to {} bytes", id, quota_bytes);
                 }
                 PeerAction::Disconnect { id } => {
                     client.disconnect_peer(&id).await?;
@@ -453,8 +459,8 @@ async fn handle_data_command(cmd: Commands, client: &mut MemCloudClient) -> anyh
                 }
             }
         }
-        Commands::Connect { addr, quota } => {
-            let quota_val = if let Some(q) = quota {
+        Commands::Connect { addr, offer_storage } => {
+            let quota_val = if let Some(q) = offer_storage {
                 memsdk::parse_size(&q)?
             } else {
                 0 // Default to 0 (Unidirectional access: Initiator writes to Responder, but Responder cannot write to Initiator)

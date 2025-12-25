@@ -296,8 +296,8 @@ const CliDocs = () => {
 
                         <h3 id="peer-connect" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Connect to a Peer</h3>
                         <CommandBlock
-                            command='memcli connect <ADDR> --quota "1gb"'
-                            description="Initiate a connection. Omit --quota to use interactive mode. Supports secure Noise-based handshake."
+                            command='memcli connect <ADDR> --offer-storage "1gb"'
+                            description="Initiate a connection. Omit --offer-storage to use interactive mode. Supports secure Noise-based handshake."
                         />
 
                         <h3 id="peer-list" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">List Active Peers</h3>
@@ -308,8 +308,8 @@ const CliDocs = () => {
 
                         <h3 id="peer-update" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Update Peer Limits (Live)</h3>
                         <CommandBlock
-                            command='memcli peer update <ID_OR_NAME> --quota "512mb"'
-                            description="Dynamically adjust the memory quota for a connected peer by Name or ID."
+                            command='memcli peer update <ID_OR_NAME> --allowed-storage "512mb"'
+                            description="Dynamically adjust the memory quota you ALLOW this peer to use on your machine."
                         />
 
                         <h3 id="peer-disconnect" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Disconnect Peer</h3>
@@ -430,8 +430,8 @@ const CliDocs = () => {
 
                         <h3 id="sys-start" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Start Daemon</h3>
                         <CommandBlock
-                            command='memcli node start --port 8080 --memory 1073741824'
-                            description="Launch the MemCloud daemon. Recommended to run this via a service manager (systemd/launchd) in production."
+                            command='memcli node start --port 8080 --total-memory 4gb'
+                            description="Launch the MemCloud daemon. Set total system memory capacity with --total-memory (default 1gb)."
                         />
 
                         <h3 id="sys-stream" className="text-lg font-semibold mt-8 mb-2 scroll-mt-24">Streaming Input</h3>

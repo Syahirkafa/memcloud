@@ -132,8 +132,9 @@ if sudo mv /tmp/memcloud_install/memnode /usr/local/bin/ && sudo mv /tmp/memclou
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "  ${GREEN}✨ You're Ready to Begin:${NC}"
-    echo "    Start daemon:   ${CYAN}memcli node start --name \"MyDevice\"${NC}"
-    echo "    Check status:   ${CYAN}memcli node status${NC}"
+    echo "    Start daemon:   ${CYAN}memcli node start --name \"MyDevice\" --total-memory 4gb${NC}"
+    echo "    Connect Peer:   ${CYAN}memcli connect <IP> --offer-storage 1gb${NC}
+    Check status:   ${CYAN}memcli node status${NC}"
     echo "    Stop daemon:    ${CYAN}memcli node stop${NC}"
     echo ""
     echo "  ${GREEN}🔮 VM-Backed Allocation (Remote RAM Pooling):${NC}"
